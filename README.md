@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## 一键启动
+
+在 macOS 上，直接双击工作区根目录下的 `start.command`，它会自动进入 `novel-to-script` 目录、安装依赖（如有需要）、启动开发服务器并打开浏览器。
+
 ## Getting Started
 
 First, run the development server:
