@@ -10,6 +10,26 @@ export const GENRE_LABELS: Record<Genre, string> = {
   fantasy: '奇幻',
 };
 
+/** 单集时长配置 */
+export type EpisodeDuration = '1:00-1:30' | '1:30-2:00' | '2:00-3:00';
+
+/** 剧本风格配置 */
+export type ScriptStyle = 'dramatic' | 'comedic' | 'suspense';
+
+/** 时长选项 */
+export const EPISODE_DURATION_LABELS: Record<EpisodeDuration, string> = {
+  '1:00-1:30': '1:00-1:30',
+  '1:30-2:00': '1:30-2:00',
+  '2:00-3:00': '2:00-3:00',
+};
+
+/** 剧本风格中文标签 */
+export const SCRIPT_STYLE_LABELS: Record<ScriptStyle, string> = {
+  dramatic: '戏剧',
+  comedic: '喜剧',
+  suspense: '悬疑',
+};
+
 /** 角色信息 */
 export interface Character {
   name: string;
@@ -78,8 +98,8 @@ export interface OutlineEntry {
 export interface GenerateConfig {
   genre: Genre;
   episodeCount: number;         // 目标集数
-  episodeDuration: string;      // 每集时长 (如 '1:30-2:00')
-  style: 'dramatic' | 'comedic' | 'suspense';  // 剧本风格
+  episodeDuration: EpisodeDuration;      // 每集时长 (如 '1:30-2:00')
+  style: ScriptStyle;  // 剧本风格
   includeDirectorNotes: boolean; // 是否包含导演提示
 }
 

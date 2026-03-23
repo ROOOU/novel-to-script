@@ -1,128 +1,174 @@
 import { NextRequest } from 'next/server';
-import { cleanText } from '@/lib/preprocessor';
-import { analyzeNovel, generateOutline, generateScript, LLMConfig } from '@/lib/llm';
-import { GenerateRequest } from '@/lib/types';
-
-function extractLLMConfig(request: NextRequest): LLMConfig {
-  return {
-    apiKey: request.headers.get('x-api-key') || undefined,
-    baseUrl: request.headers.get('x-base-url') || undefined,
-    modelName: request.headers.get('x-model-name') || undefined,
-  };
-}
+import { checkRateLimit, createRateLimitResponse } from '@/lib/rate-limit';
+import {
+  type ScriptGenerationEvent,
+  type ScriptGenerationRequest,
+} from '@/features/script-generation/contracts';
+import {
+  getScriptGenerationRequestError,
+  runScriptGeneration,
+} from '@/server/script-generation/application/run-script-generation';
+import {
+  applyPlatformResponseHeaders,
+  createPlatformJsonErrorResponse,
+  evaluatePlatformFeatureAccess,
+  evaluateUsagePreflight,
+  getPlatformRuntime,
+  getPlanHeaderDefault,
+  getUsageBudgetFromEntitlements,
+  resolvePlatformRequestContext,
+  resolveRuntimeOrganizationId,
+  resolveRuntimeProjectId,
+  resolveRuntimeWorkspaceId,
+  resolvePlatformLLMConfig,
+} from '@/server/shared/platform';
+import { createSSEStreamResponse } from '@/server/shared/sse';
 
 export async function POST(request: NextRequest) {
-  try {
-    const body: GenerateRequest = await request.json();
-    const llmConfig = extractLLMConfig(request);
+  const rateLimit = checkRateLimit(request, { scope: 'generate' });
+  if (!rateLimit.allowed) {
+    return createRateLimitResponse(rateLimit);
+  }
 
-    if (!body.text || !body.genre || !body.config) {
-      return new Response(
-        JSON.stringify({ error: '缺少必要参数' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+  const platformContext = resolvePlatformRequestContext(request, {
+    defaultPlan: getPlanHeaderDefault(request),
+  });
+
+  try {
+    const runtime = getPlatformRuntime();
+    const body = await request.json() as ScriptGenerationRequest;
+    const runtimeWorkspaceId = resolveRuntimeWorkspaceId(platformContext.workspaceId);
+    const usageSnapshot = await runtime.usageMeter.snapshot(runtimeWorkspaceId);
+    const activeJobs = await runtime.generationJobs.listActiveByWorkspaceId(runtimeWorkspaceId);
+
+    const validationError = getScriptGenerationRequestError(body);
+    if (validationError) {
+      return createPlatformJsonErrorResponse(platformContext, validationError, 400);
+    }
+
+    const platformAccess = evaluatePlatformFeatureAccess(platformContext, {
+      feature: 'script-generation',
+      episodeCount: body.config.episodeCount,
+    });
+    if (!platformAccess.allowed) {
+      return createPlatformJsonErrorResponse(
+        platformContext,
+        platformAccess.reason ?? '当前请求不满足套餐限制',
+        platformAccess.status ?? 403
       );
     }
 
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
+    const usagePreflight = evaluateUsagePreflight(
+      getUsageBudgetFromEntitlements(platformAccess.entitlements),
+      {
+        snapshot: usageSnapshot,
+        pendingRequestCount: 1,
+        pendingCharacterCount: body.text.length,
+        activeJobCount: activeJobs.length,
+      }
+    );
+    if (!usagePreflight.allowed) {
+      return createPlatformJsonErrorResponse(
+        platformContext,
+        usagePreflight.reason ?? '当前请求已超出使用额度',
+        403
+      );
+    }
+
+    const llmResolution = resolvePlatformLLMConfig(platformContext);
+    if (llmResolution.error || !llmResolution.config) {
+      return createPlatformJsonErrorResponse(
+        platformContext,
+        llmResolution.error ?? 'LLM 配置解析失败',
+        500
+      );
+    }
+    const llmConfig = llmResolution.config;
+
+    const job = await runtime.generationJobs.create({
+      organizationId: resolveRuntimeOrganizationId(platformContext.organizationId),
+      workspaceId: runtimeWorkspaceId,
+      projectId: resolveRuntimeProjectId(platformContext.projectId, 'script-generation'),
+      kind: 'script-generation',
+      requestedByUserId: platformContext.userId,
+      requestedBySessionId: platformContext.sessionId,
+      modelName: llmConfig.modelName ?? null,
+      inputSnapshot: {
+        requestId: platformContext.requestId,
+        sessionId: platformContext.sessionId,
+        genre: body.genre,
+        episodeCount: body.config.episodeCount,
+        episodeDuration: body.config.episodeDuration,
+        style: body.config.style,
+      },
+    });
+    await runtime.generationJobs.markRunning(job.id, undefined, platformContext.userId);
+    const accessToken = runtime.generationJobAccess.issue(job.id);
+
+    const response = createSSEStreamResponse<ScriptGenerationEvent>(
+      async (send) => {
         try {
-          const send = (data: object) => {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
-            );
-          };
-
-          // Step 1: 预处理
-          send({ step: 'preprocessing', message: '正在预处理文本...' });
-          const cleanedText = cleanText(body.text);
-          const textForAnalysis = cleanedText.slice(0, 8000);
-
-          // Step 2: 分析
-          let analysisJson: string;
-          if (body.analysis) {
-            analysisJson = JSON.stringify(body.analysis);
-            send({ step: 'analyzing', message: '使用已有分析结果...' });
-          } else {
-            send({ step: 'analyzing', message: '正在分析小说内容（角色、情节、冲突点）...' });
-            analysisJson = await analyzeNovel(textForAnalysis, body.genre, llmConfig);
-            send({ step: 'analyzed', message: '分析完成', data: analysisJson });
-          }
-
-          // Step 3: 大纲
-          send({ step: 'outlining', message: '正在生成分集大纲...' });
-          const outlineJson = await generateOutline(
-            analysisJson,
-            body.genre,
-            body.config.episodeCount,
-            llmConfig
-          );
-          send({ step: 'outlined', message: '大纲生成完成', data: outlineJson });
-
-          // Step 4: 逐集生成剧本
-          const episodeCount = body.config.episodeCount;
-          for (let ep = 1; ep <= episodeCount; ep++) {
-            send({
-              step: 'generating',
-              message: `正在生成第 ${ep}/${episodeCount} 集剧本...`,
-              episode: ep,
-            });
-
-            let scriptContent = '';
-            for await (const chunk of generateScript(
-              outlineJson,
-              analysisJson,
-              body.genre,
-              ep,
-              llmConfig
-            )) {
-              scriptContent += chunk;
-              send({
-                step: 'streaming',
-                episode: ep,
-                chunk,
-                content: scriptContent,
+          await runScriptGeneration({
+            body,
+            context: platformContext,
+            jobId: job.id,
+            send,
+            llmConfig,
+            usageMeter: runtime.usageMeter,
+            onProgress: async (progress) => {
+              await runtime.generationJobs.update(job.id, {
+                progress: progress.progress,
+                currentStep: progress.currentStep,
+                outputSummary: progress.outputSummary,
+                updatedByUserId: platformContext.userId,
               });
-            }
-
-            send({
-              step: 'episode_done',
-              episode: ep,
-              content: scriptContent,
-            });
-          }
-
-          // Step 5: 完成
-          send({ step: 'done', message: '全部剧本生成完成！' });
+            },
+            onArtifact: async (artifact) => {
+              await runtime.generationArtifacts.create({
+                organizationId: job.organizationId,
+                workspaceId: job.workspaceId,
+                projectId: job.projectId,
+                generationJobId: job.id,
+                kind: artifact.kind,
+                format: artifact.format,
+                title: artifact.title,
+                content: artifact.content,
+                metadata: artifact.metadata,
+                createdByUserId: platformContext.userId,
+              });
+            },
+          });
+          await runtime.generationJobs.markSucceeded(job.id, {
+            progress: 100,
+            currentStep: 'done',
+            outputSummary: `Generated ${body.config.episodeCount} episodes`,
+            updatedByUserId: platformContext.userId,
+          });
         } catch (error) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({
-                step: 'error',
-                message: error instanceof Error ? error.message : '生成过程出错，请检查 API 配置',
-              })}\n\n`
-            )
-          );
-        } finally {
-          controller.close();
+          await runtime.generationJobs.markFailed(job.id, {
+            errorMessage: error instanceof Error ? error.message : '生成失败',
+            updatedByUserId: platformContext.userId,
+          });
+          throw error;
         }
       },
-    });
+      {
+        onError: (error) => ({
+          step: 'error',
+          message: error instanceof Error ? error.message : '生成过程出错，请检查后端 LLM 配置',
+        }),
+      }
+    );
+    response.headers.set('X-Generation-Job-Id', job.id);
+    response.headers.set('X-Generation-Access-Token', accessToken);
 
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
+    return applyPlatformResponseHeaders(response, platformContext);
   } catch (error) {
-    console.error('Generate error:', error);
-    return new Response(
-      JSON.stringify({
-        error: error instanceof Error ? error.message : '生成失败',
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    console.error('Generate error:', platformContext.requestId, error);
+    return createPlatformJsonErrorResponse(
+      platformContext,
+      error instanceof Error ? error.message : '生成失败',
+      500
     );
   }
 }

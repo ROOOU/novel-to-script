@@ -23,6 +23,7 @@
 # misc
 .DS_Store
 *.pem
+.novelscript/
 
 # debug
 npm-debug.log*

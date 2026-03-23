@@ -1,4 +1,10 @@
-import { Genre } from '../types';
+import {
+  type EpisodeDuration,
+  type GenerateConfig,
+  Genre,
+  SCRIPT_STYLE_LABELS,
+  type ScriptStyle,
+} from '../types';
 
 /**
  * 通用基础 Prompt — 所有题材共享的剧本生成基础指令
@@ -119,8 +125,40 @@ ${genreStructure[genre]}
 只输出 JSON，不要输出其他内容。`;
 }
 
+function getDurationGuidance(duration: EpisodeDuration): string {
+  const guidance: Record<EpisodeDuration, string> = {
+    '1:00-1:30': '目标时长偏短，建议控制在 2-3 场戏，开场即冲突，结尾即钩子，尽量 220-320 字内完成。',
+    '1:30-2:00': '目标时长标准，建议控制在 3-4 场戏，保证转折和悬念完整，约 300-500 字剧本。',
+    '2:00-3:00': '目标时长偏长，建议控制在 4-6 场戏，可加入一段铺垫或副冲突，但节奏不能松散，约 450-700 字剧本。',
+  };
+
+  return guidance[duration];
+}
+
+function getStyleGuidance(style: ScriptStyle): string {
+  const guidance: Record<ScriptStyle, string> = {
+    dramatic: `戏剧风格强化要求：
+- 情绪起伏要明显，冲突升级要快
+- 对白优先服务人物关系和压迫感
+- 每场戏至少有一个明确的情绪爆点或关系反转`,
+    comedic: `喜剧风格强化要求：
+- 在不破坏主线的前提下提高轻松感和反差笑点
+- 对白可加入机锋、误会、节奏性包袱，但不要低幼
+- 场景调度优先制造反差和意外，结尾钩子也可以带幽默反转`,
+    suspense: `悬疑风格强化要求：
+- 信息披露必须分层，避免一次性说透
+- 通过细节、停顿、异常反应制造不安感
+- 每场戏都要留下新的疑问、误导或危险信号`,
+  };
+
+  return guidance[style];
+}
+
 /** 剧本生成 Prompt */
-export function getScriptPrompt(genre: Genre): string {
+export function getScriptPrompt(
+  genre: Genre,
+  config: Pick<GenerateConfig, 'episodeDuration' | 'style'>
+): string {
   const genreStyle: Record<Genre, string> = {
     xianxia: `修仙剧本风格要求：
 - 对白风格：古风韵味但不过度文言，适度中二热血
@@ -146,6 +184,12 @@ export function getScriptPrompt(genre: Genre): string {
 
 ## 当前任务：生成完整剧本
 ${genreStyle[genre]}
+
+## 本次生成配置
+- 目标单集时长：${config.episodeDuration}
+- 指定剧本风格：${SCRIPT_STYLE_LABELS[config.style]}
+- ${getDurationGuidance(config.episodeDuration)}
+${getStyleGuidance(config.style)}
 
 根据提供的大纲和角色信息，生成完整的单集剧本。
 

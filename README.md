@@ -4,6 +4,27 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 在 macOS 上，直接双击工作区根目录下的 `start.command`，它会自动进入 `novel-to-script` 目录、安装依赖（如有需要）、启动开发服务器并打开浏览器。
 
+## 后端环境变量
+
+API Key、Base URL、模型名现在统一放在后端环境变量中，前端页面不再提供填写入口，也不会把这些信息存到浏览器。
+
+在项目根目录创建 `.env.local`：
+
+```bash
+OPENAI_API_KEY=sk-...
+# 可选，默认 https://api.openai.com/v1
+OPENAI_BASE_URL=https://api.openai.com/v1
+# 可选，默认 gpt-4o
+MODEL_NAME=gpt-4o
+```
+
+兼容旧变量名：
+
+```bash
+API_KEY=sk-...
+API_BASE_URL=https://api.openai.com/v1
+```
+
 ## Getting Started
 
 First, run the development server:
