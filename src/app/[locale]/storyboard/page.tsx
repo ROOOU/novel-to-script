@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { getCurrentViewer } from '@/server/auth/service';
 
 export default async function StoryboardLegacyRedirect({
   params,
@@ -6,5 +7,11 @@ export default async function StoryboardLegacyRedirect({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  redirect(`/${locale}/projects`);
+  const viewer = await getCurrentViewer();
+
+  if (viewer) {
+    redirect(`/${locale}/projects`);
+  }
+
+  redirect(`/${locale}`);
 }

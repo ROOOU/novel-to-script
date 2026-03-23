@@ -5,13 +5,14 @@ import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
 const NAV_ITEMS = [
-  { href: '/', label: '📖 小说转剧本' },
-  { href: '/storyboard', label: '🎥 分镜提示词' },
+  { href: '/projects', label: 'Projects' },
+  { href: '/pricing', label: 'Pricing' },
 ];
 
 export function MobileNav() {
   const pathname = usePathname();
   const [openedPath, setOpenedPath] = useState<string | null>(null);
+  const locale = getLocaleFromPathname(pathname);
   const isOpen = openedPath === pathname;
 
   return (
@@ -20,8 +21,8 @@ export function MobileNav() {
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.href}
-            href={item.href}
-            className={`nav-link ${pathname === item.href ? 'active' : ''}`}
+            href={`/${locale}${item.href}`}
+            className={`nav-link ${isActivePath(pathname, item.href, locale) ? 'active' : ''}`}
             onClick={() => setOpenedPath(null)}
           >
             {item.label}
@@ -47,8 +48,8 @@ export function MobileNav() {
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
-              href={item.href}
-              className={`nav-link mobile-nav-link ${pathname === item.href ? 'active' : ''}`}
+              href={`/${locale}${item.href}`}
+              className={`nav-link mobile-nav-link ${isActivePath(pathname, item.href, locale) ? 'active' : ''}`}
               onClick={() => setOpenedPath(null)}
             >
               {item.label}
@@ -58,4 +59,13 @@ export function MobileNav() {
       )}
     </div>
   );
+}
+
+function getLocaleFromPathname(pathname: string): 'zh-CN' | 'en-US' {
+  return pathname.startsWith('/en-US') ? 'en-US' : 'zh-CN';
+}
+
+function isActivePath(pathname: string, itemPath: string, locale: 'zh-CN' | 'en-US'): boolean {
+  const targetPath = `/${locale}${itemPath}`;
+  return pathname === targetPath || pathname.startsWith(`${targetPath}/`);
 }

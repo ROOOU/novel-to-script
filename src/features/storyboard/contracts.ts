@@ -1,9 +1,13 @@
 export interface StoryboardGenerateRequest {
-  scriptText: string;
+  scriptText?: string;
   visualStyle?: string;
   colorTone?: string;
   genreLabel?: string;
   safeMode?: boolean;
+}
+
+export interface StoryboardGenerateRequestV2 extends StoryboardGenerateRequest {
+  scriptArtifactIds?: string[];
 }
 
 export interface StoryboardGenerationEvent {

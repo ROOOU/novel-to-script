@@ -95,13 +95,13 @@ async function createDeveloperPaymentOrder(viewer: DeveloperScenarioViewer) {
   const runtime = getPlatformRuntime();
   const order = await runtime.paymentOrders.create({
     organizationId: viewer.organization.id,
-    provider: viewer.organization.billingCurrency === 'USD' ? 'stripe' : 'manual',
+    provider: 'internal',
     purchaseKind: 'credit-pack',
     status: 'pending',
-    creditPackKey: 'credits-120',
-    amountCents: viewer.organization.billingCurrency === 'USD' ? 1500 : 9900,
-    currency: viewer.organization.billingCurrency,
-    creditsGranted: 120,
+    creditPackKey: 'credits-200',
+    amountCents: 1490,
+    currency: 'USD',
+    creditsGranted: 200,
     metadata: {
       developerScenario: true,
       createdFrom: 'dev-channel',

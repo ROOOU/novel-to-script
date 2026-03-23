@@ -3,7 +3,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'NovelScript',
-  description: 'NovelScript SaaS workspace for short-drama adaptation, billing, and storyboard generation.',
+  description: 'NovelScript project platform for short-drama adaptation, billing, and storyboard generation.',
 };
 
 export default function RootLayout({

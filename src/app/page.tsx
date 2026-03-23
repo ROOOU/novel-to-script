@@ -1,5 +1,11 @@
-import { AnonymousScriptWorkbench } from '@/features/script-console/AnonymousScriptWorkbench';
+import { redirect } from 'next/navigation';
+import { getCurrentViewer } from '@/server/auth/service';
 
-export default function Home() {
-  return <AnonymousScriptWorkbench />;
+export default async function Home() {
+  const viewer = await getCurrentViewer();
+  if (viewer) {
+    redirect(`/${viewer.session.locale}/projects`);
+  }
+
+  redirect('/zh-CN');
 }

@@ -9,12 +9,10 @@ export default async function PricingPage({
 }) {
   const { locale } = await params;
   const dictionary = await getDictionary(locale);
-  const initialCurrency = locale === 'en-US' ? 'USD' : 'CNY';
 
   return (
     <PricingClient
       locale={locale === 'en-US' ? 'en-US' : 'zh-CN'}
-      initialCurrency={initialCurrency}
       plans={Object.values(PLAN_CATALOG)}
       creditPacks={Object.values(CREDIT_PACK_CATALOG)}
       labels={dictionary.pricingPage}

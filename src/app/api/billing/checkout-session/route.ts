@@ -6,7 +6,7 @@ import { requireViewerResponse } from '@/server/auth/http';
 
 const checkoutSchema = z.object({
   purchaseKind: z.enum(['subscription', 'credit-pack']),
-  currency: z.enum(['CNY', 'USD']),
+  currency: z.literal('USD').optional().default('USD'),
   planKey: z.string().optional(),
   creditPackKey: z.string().optional(),
 });
@@ -31,10 +31,10 @@ export async function POST(request: NextRequest) {
     email: viewer.user.email,
     locale: viewer.session.locale,
     origin,
-    currency: body.currency,
     purchaseKind: body.purchaseKind,
     planKey: body.planKey,
     creditPackKey: body.creditPackKey,
+    requestedCurrency: body.currency,
   });
 
   return NextResponse.json({

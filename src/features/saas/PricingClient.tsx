@@ -3,11 +3,10 @@
 import { startTransition, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CreditPackCatalogEntry, PlanCatalogEntry } from '@/server/billing/catalog';
-import type { SupportedCurrency, SupportedLocale } from '@/server/shared/platform/domain';
+import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 interface PricingClientProps {
   locale: SupportedLocale;
-  initialCurrency: SupportedCurrency;
   plans: PlanCatalogEntry[];
   creditPacks: CreditPackCatalogEntry[];
   labels: {
@@ -23,23 +22,32 @@ interface PricingClientProps {
 
 export function PricingClient({
   locale,
-  initialCurrency,
   plans,
   creditPacks,
   labels,
 }: PricingClientProps) {
   const router = useRouter();
-  const [currency, setCurrency] = useState<SupportedCurrency>(initialCurrency);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const currency = 'USD' as const;
   const localeKey = locale === 'en-US' ? 'en-US' : 'zh-CN';
 
   async function handleCheckout(payload: {
     purchaseKind: 'subscription' | 'credit-pack';
     planKey?: string;
     creditPackKey?: string;
+    skipCheckout?: boolean;
   }) {
+    if (payload.skipCheckout) {
+      startTransition(() => {
+        router.push(`/${locale}/projects`);
+      });
+      return;
+    }
+
     const key = `${payload.purchaseKind}:${payload.planKey ?? payload.creditPackKey ?? 'unknown'}`;
     setBusyKey(key);
+    setMessage(null);
     const response = await fetch('/api/billing/checkout-session', {
       method: 'POST',
       headers: {
@@ -47,13 +55,25 @@ export function PricingClient({
       },
       body: JSON.stringify({
         ...payload,
-        currency,
+        currency: 'USD',
       }),
     });
     const result = await response.json();
     setBusyKey(null);
 
-    if (result.checkout?.mode === 'stripe' && result.checkout?.url) {
+    if (!response.ok || !result.ok) {
+      if (response.status === 401) {
+        startTransition(() => {
+          router.push(`/${locale}/login`);
+        });
+        return;
+      }
+
+      setMessage(result.error ?? getDefaultPricingError(locale));
+      return;
+    }
+
+    if (result.checkout?.url) {
       window.location.href = result.checkout.url;
       return;
     }
@@ -70,24 +90,17 @@ export function PricingClient({
         <span className="eyebrow">{labels.title}</span>
         <h1>{labels.subtitle}</h1>
         <p>{labels.billingHint}</p>
-        <div className="segmented-control">
-          {(['CNY', 'USD'] as SupportedCurrency[]).map((nextCurrency) => (
-            <button
-              key={nextCurrency}
-              type="button"
-              className={`segment ${currency === nextCurrency ? 'active' : ''}`}
-              onClick={() => setCurrency(nextCurrency)}
-            >
-              {nextCurrency}
-            </button>
-          ))}
-        </div>
+        <p className="helper-text">{labels.manualHint}</p>
+        {message ? <p className="error-message">{message}</p> : null}
       </section>
 
       <section className="pricing-grid">
         {plans.map((plan) => (
           <article key={plan.key} className="pricing-card">
-            <h2>{plan.name[localeKey]}</h2>
+            <div className="list-row">
+              <h2>{plan.name[localeKey]}</h2>
+              <span className="chip">PayPal</span>
+            </div>
             <p>{plan.description[localeKey]}</p>
             <strong className="price-tag">
               {formatMoney(plan.prices[currency].amountCents, currency)}
@@ -97,10 +110,16 @@ export function PricingClient({
             <button
               type="button"
               className="primary-button"
-              onClick={() => handleCheckout({ purchaseKind: 'subscription', planKey: plan.key })}
+              onClick={() =>
+                handleCheckout({
+                  purchaseKind: 'subscription',
+                  planKey: plan.key,
+                  skipCheckout: plan.prices[currency].amountCents === 0,
+                })
+              }
               disabled={busyKey === `subscription:${plan.key}`}
             >
-              {labels.subscribe}
+              {plan.prices[currency].amountCents === 0 ? getFreePlanActionLabel(locale) : `${labels.subscribe} · PayPal`}
             </button>
           </article>
         ))}
@@ -111,7 +130,10 @@ export function PricingClient({
         <div className="pricing-grid compact">
           {creditPacks.map((pack) => (
             <article key={pack.key} className="pricing-card">
-              <h3>{pack.credits} credits</h3>
+              <div className="list-row">
+                <h3>{pack.credits} credits</h3>
+                <span className="chip">PayPal</span>
+              </div>
               <strong className="price-tag">{formatMoney(pack.prices[currency].amountCents, currency)}</strong>
               <button
                 type="button"
@@ -119,21 +141,28 @@ export function PricingClient({
                 onClick={() => handleCheckout({ purchaseKind: 'credit-pack', creditPackKey: pack.key })}
                 disabled={busyKey === `credit-pack:${pack.key}`}
               >
-                {labels.buyCredits}
+                {`${labels.buyCredits} · PayPal`}
               </button>
             </article>
           ))}
         </div>
-        <p className="helper-text">{labels.manualHint}</p>
       </section>
     </div>
   );
 }
 
-function formatMoney(amountCents: number, currency: SupportedCurrency): string {
-  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'zh-CN', {
+function formatMoney(amountCents: number, currency: string): string {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(amountCents / 100);
+}
+
+function getFreePlanActionLabel(locale: SupportedLocale) {
+  return locale === 'en-US' ? 'Start free' : '开始免费使用';
+}
+
+function getDefaultPricingError(locale: SupportedLocale) {
+  return locale === 'en-US' ? 'Unable to start checkout.' : '暂时无法发起结账。';
 }

@@ -9,7 +9,6 @@ export interface Dictionary {
     billing: string;
     redeem: string;
     admin: string;
-    workspace: string;
     create: string;
     cancel: string;
     save: string;
@@ -18,8 +17,6 @@ export interface Dictionary {
     credits: string;
     amount: string;
     backToProjects: string;
-    manual: string;
-    stripe: string;
   };
   nav: {
     home: string;
@@ -218,7 +215,5 @@ export interface Dictionary {
     sourceSaved: string;
     redeemSuccess: string;
     insufficientCredits: string;
-    stripeDisabled: string;
-    manualCheckoutCreated: string;
   };
 }

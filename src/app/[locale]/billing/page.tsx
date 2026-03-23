@@ -6,10 +6,12 @@ import { getBillingSummary } from '@/server/billing/payments';
 
 export default async function BillingPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ locale: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { locale } = await params;
+  const [{ locale }, resolvedSearchParams] = await Promise.all([params, searchParams]);
   const viewer = await getCurrentViewer();
   if (!viewer) {
     redirect(`/${locale}/login`);
@@ -26,7 +28,36 @@ export default async function BillingPage({
       subscription={summary.subscription}
       creditAccount={summary.creditAccount}
       paymentOrders={summary.paymentOrders}
+      ledgerEntries={summary.ledgerEntries}
+      initialCheckout={{
+        status:
+          readSearchParam(resolvedSearchParams.checkout) === 'success'
+            ? 'success'
+            : readSearchParam(resolvedSearchParams.checkout) === 'cancelled'
+              ? 'cancelled'
+              : null,
+        paymentOrderId: readSearchParam(resolvedSearchParams.paymentOrderId),
+        providerOrderId: readSearchParam(resolvedSearchParams.providerOrderId),
+        purchaseKind: readPurchaseKind(resolvedSearchParams.purchaseKind),
+      }}
       labels={dictionary.billingPage}
     />
   );
+}
+
+function readSearchParam(value: string | string[] | undefined) {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+
+  return value ?? null;
+}
+
+function readPurchaseKind(value: string | string[] | undefined) {
+  const candidate = readSearchParam(value);
+  if (candidate === 'subscription' || candidate === 'credit-pack') {
+    return candidate;
+  }
+
+  return null;
 }

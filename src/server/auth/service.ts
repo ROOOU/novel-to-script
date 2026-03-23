@@ -81,7 +81,7 @@ export async function authenticateUser(input: AuthenticateInput): Promise<AppSes
   const workspace = await runtime.workspaces.create({
     organizationId: organization.id,
     slug: 'main',
-    name: input.locale === 'en-US' ? 'Main Workspace' : '默认工作区',
+    name: input.locale === 'en-US' ? 'Main Project Space' : '默认项目空间',
     defaultLocale: input.locale,
     createdByUserId: user.id,
   });
@@ -92,17 +92,16 @@ export async function authenticateUser(input: AuthenticateInput): Promise<AppSes
     updatedByUserId: user.id,
   });
 
-  const trialPlan = getPlanCatalogEntry('trial');
+  const freePlan = getPlanCatalogEntry('free');
   await runtime.subscriptions.create({
     organizationId: organization.id,
     provider: 'internal',
-    planKey: trialPlan.key,
-    status: 'trialing',
-    billingInterval: trialPlan.billingInterval,
-    entitlements: trialPlan.entitlements,
-    priceCents: trialPlan.prices[billingPreferences.currency].amountCents,
-    currency: billingPreferences.currency,
-    portalManagementEnabled: false,
+    planKey: freePlan.key,
+    status: 'active',
+    billingInterval: freePlan.billingInterval,
+    entitlements: freePlan.entitlements,
+    priceCents: freePlan.prices.USD.amountCents,
+    currency: 'USD',
     currentPeriodStart: new Date().toISOString(),
     currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     createdByUserId: user.id,
@@ -110,9 +109,9 @@ export async function authenticateUser(input: AuthenticateInput): Promise<AppSes
 
   const creditAccount = await runtime.creditAccounts.create({
     organizationId: organization.id,
-    availableCredits: trialPlan.monthlyCredits,
+    availableCredits: freePlan.monthlyCredits,
     reservedCredits: 0,
-    grantedCreditsTotal: trialPlan.monthlyCredits,
+    grantedCreditsTotal: freePlan.monthlyCredits,
     consumedCreditsTotal: 0,
     createdByUserId: user.id,
   });
@@ -121,9 +120,9 @@ export async function authenticateUser(input: AuthenticateInput): Promise<AppSes
     organizationId: organization.id,
     creditAccountId: creditAccount.id,
     kind: 'subscription_grant',
-    deltaCredits: trialPlan.monthlyCredits,
-    balanceAfter: trialPlan.monthlyCredits,
-    note: 'Initial trial credits',
+    deltaCredits: freePlan.monthlyCredits,
+    balanceAfter: freePlan.monthlyCredits,
+    note: 'Initial free credits',
     createdByUserId: user.id,
   });
 

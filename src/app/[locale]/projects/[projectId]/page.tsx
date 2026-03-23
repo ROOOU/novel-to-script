@@ -34,6 +34,7 @@ export default async function ProjectDetailPage({
       initialSourceText={sourceDocument?.textContent ?? ''}
       jobs={bundle.jobs}
       artifacts={bundle.artifacts}
+      artifactRelations={bundle.artifactRelations}
       labels={{
         ...dictionary.projectDetail,
         backToProjects: dictionary.common.backToProjects,

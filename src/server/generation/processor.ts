@@ -1,12 +1,22 @@
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
-import type { StoryboardGenerateRequest } from '@/features/storyboard/contracts';
+import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
 import { estimateJobCredits } from '@/server/billing/catalog';
 import { captureJobCredits, releaseJobCredits, reserveJobCredits } from '@/server/billing/service';
 import { runScriptGeneration } from '@/server/script-generation/application/run-script-generation';
 import { runStoryboardGeneration } from '@/server/storyboard/application/run-storyboard-generation';
-import { getPlatformRuntime, resolvePlatformLLMConfig } from '@/server/shared/platform';
+import { getPlatformRuntime, resolvePlatformLLMConfig, type GenerationArtifact } from '@/server/shared/platform';
 
 export type ProjectGenerationKind = 'script-generation' | 'storyboard-generation';
+
+interface PersistedGenerationJobSnapshot {
+  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2;
+  metadata?: Record<string, unknown>;
+}
+
+interface NovelToStoryboardPipelineMetadata {
+  pipelineMode: 'novel-to-storyboard';
+  storyboardPayload?: Partial<StoryboardGenerateRequestV2>;
+}
 
 export async function createPersistedGenerationJob(input: {
   organizationId: string;
@@ -14,7 +24,8 @@ export async function createPersistedGenerationJob(input: {
   projectId: string;
   userId: string;
   kind: ProjectGenerationKind;
-  body: ScriptGenerationRequest | StoryboardGenerateRequest;
+  body: ScriptGenerationRequest | StoryboardGenerateRequestV2;
+  metadata?: Record<string, unknown>;
 }) {
   const runtime = getPlatformRuntime();
   const estimatedCredits = estimateJobCredits(input.kind, {
@@ -32,6 +43,7 @@ export async function createPersistedGenerationJob(input: {
     requestedByUserId: input.userId,
     inputSnapshot: {
       payload: input.body,
+      metadata: input.metadata ?? {},
     },
     billingState: 'reserved',
     reservedCredits: estimatedCredits,
@@ -66,7 +78,27 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
     return;
   }
 
-  const planKey = (await runtime.subscriptions.getCurrentByOrganizationId(job.organizationId))?.planKey ?? 'trial';
+  if (job.status === 'cancelled') {
+    if (job.billingState !== 'released' && (job.reservedCredits ?? 0) > 0) {
+      await releaseJobCredits({
+        organizationId: job.organizationId,
+        userId: job.requestedByUserId,
+        generationJobId: job.id,
+        credits: job.reservedCredits ?? 0,
+        note: `${job.kind} cancelled`,
+      });
+
+      await runtime.generationJobs.update(job.id, {
+        billingState: 'released',
+        updatedByUserId: job.requestedByUserId,
+      });
+    }
+
+    return;
+  }
+
+  const planKey =
+    (await runtime.subscriptions.getCurrentByOrganizationId(job.organizationId))?.planKey ?? 'free';
   const platformContext = {
     requestId: `job:${job.id}`,
     traceId: `job:${job.id}`,
@@ -88,11 +120,17 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
     return;
   }
 
+  const snapshot = parseJobSnapshot(job.inputSnapshot);
   const onProgress = async (progress: {
     progress: number;
     currentStep: string;
     outputSummary?: string;
   }) => {
+    const latestJob = await runtime.generationJobs.getById(job.id);
+    if (latestJob?.status === 'cancelled') {
+      throw new Error('JOB_CANCELLED');
+    }
+
     await runtime.generationJobs.update(job.id, {
       progress: progress.progress,
       currentStep: progress.currentStep,
@@ -101,11 +139,13 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
     });
   };
 
+  const createdArtifacts: GenerationArtifact[] = [];
+
   try {
     await runtime.generationJobs.markRunning(job.id, undefined, job.requestedByUserId);
 
     if (job.kind === 'script-generation') {
-      const body = job.inputSnapshot.payload as ScriptGenerationRequest | undefined;
+      const body = snapshot.payload as ScriptGenerationRequest | undefined;
       if (!body) {
         throw new Error('SCRIPT_JOB_PAYLOAD_MISSING');
       }
@@ -119,7 +159,7 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
         usageMeter: runtime.usageMeter,
         onProgress,
         onArtifact: async (artifact) => {
-          await runtime.generationArtifacts.create({
+          const created = await runtime.generationArtifacts.create({
             organizationId: job.organizationId,
             workspaceId: job.workspaceId,
             projectId: job.projectId,
@@ -131,10 +171,11 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
             metadata: artifact.metadata,
             createdByUserId: job.requestedByUserId,
           });
+          createdArtifacts.push(created);
         },
       });
     } else if (job.kind === 'storyboard-generation') {
-      const body = job.inputSnapshot.payload as StoryboardGenerateRequest | undefined;
+      const body = snapshot.payload as StoryboardGenerateRequestV2 | undefined;
       if (!body) {
         throw new Error('STORYBOARD_JOB_PAYLOAD_MISSING');
       }
@@ -156,7 +197,7 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
         usageMeter: runtime.usageMeter,
         onProgress,
         onArtifact: async (artifact) => {
-          await runtime.generationArtifacts.create({
+          const created = await runtime.generationArtifacts.create({
             organizationId: job.organizationId,
             workspaceId: job.workspaceId,
             projectId: job.projectId,
@@ -168,6 +209,7 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
             metadata: artifact.metadata,
             createdByUserId: job.requestedByUserId,
           });
+          createdArtifacts.push(created);
         },
       });
 
@@ -175,6 +217,13 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
         throw new Error(blockedMessage);
       }
     }
+
+    const latestJob = await runtime.generationJobs.getById(job.id);
+    if (latestJob?.status === 'cancelled') {
+      return;
+    }
+
+    await writeDerivedArtifactRelations(job, createdArtifacts, snapshot.payload);
 
     await captureJobCredits({
       organizationId: job.organizationId,
@@ -192,9 +241,168 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
       billingState: 'captured',
       updatedByUserId: job.requestedByUserId,
     });
+
+    if (job.kind === 'script-generation') {
+      await maybeRunNovelToStoryboardPipeline(job, createdArtifacts, snapshot.metadata ?? {});
+    }
   } catch (error) {
+    if (error instanceof Error && error.message === 'JOB_CANCELLED') {
+      return;
+    }
+
     await failAndRelease(job.id, error instanceof Error ? error.message : 'GENERATION_FAILED');
   }
+}
+
+async function maybeRunNovelToStoryboardPipeline(
+  job: Awaited<ReturnType<ReturnType<typeof getPlatformRuntime>['generationJobs']['getById']>>,
+  createdArtifacts: GenerationArtifact[],
+  metadata: Record<string, unknown>
+) {
+  if (!job) {
+    return;
+  }
+
+  const pipeline = parseNovelToStoryboardPipelineMetadata(metadata);
+  if (!pipeline) {
+    return;
+  }
+
+  const scriptArtifactIds = createdArtifacts
+    .filter((artifact) => artifact.kind === 'script')
+    .map((artifact) => artifact.id);
+  if (scriptArtifactIds.length === 0) {
+    return;
+  }
+
+  const downstreamJob = await createPersistedGenerationJob({
+    organizationId: job.organizationId,
+    workspaceId: job.workspaceId,
+    projectId: job.projectId,
+    userId: job.requestedByUserId ?? 'system',
+    kind: 'storyboard-generation',
+    body: {
+      scriptArtifactIds,
+      visualStyle: pipeline.storyboardPayload?.visualStyle,
+      colorTone: pipeline.storyboardPayload?.colorTone,
+      genreLabel: pipeline.storyboardPayload?.genreLabel,
+      safeMode: pipeline.storyboardPayload?.safeMode,
+    },
+    metadata: {
+      pipelineMode: 'novel-to-storyboard',
+      upstreamJobId: job.id,
+    },
+  });
+
+  await processPersistedGenerationJob(downstreamJob.id);
+}
+
+async function writeDerivedArtifactRelations(
+  job: Awaited<ReturnType<ReturnType<typeof getPlatformRuntime>['generationJobs']['getById']>>,
+  createdArtifacts: GenerationArtifact[],
+  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2
+) {
+  if (!job || createdArtifacts.length === 0) {
+    return;
+  }
+
+  const runtime = getPlatformRuntime();
+  const relationInputs =
+    job.kind === 'script-generation'
+      ? buildScriptArtifactRelationInputs(job, createdArtifacts)
+      : buildStoryboardArtifactRelationInputs(job, createdArtifacts, payload as StoryboardGenerateRequestV2 | undefined);
+
+  if (relationInputs.length === 0) {
+    return;
+  }
+
+  await runtime.artifactRelations.createMany(relationInputs);
+}
+
+function buildScriptArtifactRelationInputs(
+  job: NonNullable<Awaited<ReturnType<ReturnType<typeof getPlatformRuntime>['generationJobs']['getById']>>>,
+  createdArtifacts: GenerationArtifact[]
+) {
+  const analysisArtifact = createdArtifacts.find((artifact) => artifact.kind === 'analysis');
+  const outlineArtifact = createdArtifacts.find((artifact) => artifact.kind === 'outline');
+  const scriptArtifacts = createdArtifacts.filter((artifact) => artifact.kind === 'script');
+  const relationInputs = [];
+
+  if (analysisArtifact && outlineArtifact) {
+    relationInputs.push({
+      projectId: job.projectId,
+      upstreamArtifactId: analysisArtifact.id,
+      downstreamArtifactId: outlineArtifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+      },
+      createdByUserId: job.requestedByUserId,
+    });
+  }
+
+  if (outlineArtifact) {
+    for (const scriptArtifact of scriptArtifacts) {
+      relationInputs.push({
+        projectId: job.projectId,
+        upstreamArtifactId: outlineArtifact.id,
+        downstreamArtifactId: scriptArtifact.id,
+        relationType: 'derived_from' as const,
+        metadata: {
+          generationJobId: job.id,
+          episode: scriptArtifact.metadata?.episode ?? null,
+        },
+        createdByUserId: job.requestedByUserId,
+      });
+    }
+  }
+
+  return relationInputs;
+}
+
+function buildStoryboardArtifactRelationInputs(
+  job: NonNullable<Awaited<ReturnType<ReturnType<typeof getPlatformRuntime>['generationJobs']['getById']>>>,
+  createdArtifacts: GenerationArtifact[],
+  payload?: StoryboardGenerateRequestV2
+) {
+  const storyboardArtifacts = createdArtifacts.filter((artifact) => artifact.kind === 'storyboard');
+  if (storyboardArtifacts.length === 0) {
+    return [];
+  }
+
+  const sourceScriptArtifactIds = extractSourceScriptArtifactIds(storyboardArtifacts, payload);
+  if (sourceScriptArtifactIds.length === 0) {
+    return [];
+  }
+
+  return storyboardArtifacts.flatMap((artifact) =>
+    sourceScriptArtifactIds.map((upstreamArtifactId) => ({
+      projectId: job.projectId,
+      upstreamArtifactId,
+      downstreamArtifactId: artifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+      },
+      createdByUserId: job.requestedByUserId,
+    }))
+  );
+}
+
+function extractSourceScriptArtifactIds(
+  storyboardArtifacts: GenerationArtifact[],
+  payload?: StoryboardGenerateRequestV2
+) {
+  const fromArtifacts = storyboardArtifacts.flatMap((artifact) => {
+    const value = artifact.metadata?.sourceScriptArtifactIds;
+    return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+  });
+  const fromPayload =
+    payload && 'scriptArtifactIds' in payload && Array.isArray(payload.scriptArtifactIds)
+      ? payload.scriptArtifactIds.filter((entry): entry is string => typeof entry === 'string')
+      : [];
+
+  return Array.from(new Set([...fromArtifacts, ...fromPayload]));
 }
 
 async function failAndRelease(jobId: string, errorMessage: string) {
@@ -223,12 +431,37 @@ async function failAndRelease(jobId: string, errorMessage: string) {
 
 function mapPlanKeyToPlatformPlan(planKey: string): 'free' | 'pro' | 'team' | 'enterprise' {
   switch (planKey) {
-    case 'studio':
-      return 'team';
+    case 'creator':
     case 'pro':
       return 'pro';
-    case 'trial':
+    case 'free':
     default:
       return 'free';
   }
+}
+
+function parseJobSnapshot(value: Record<string, unknown>): PersistedGenerationJobSnapshot {
+  return {
+    payload: value.payload as ScriptGenerationRequest | StoryboardGenerateRequestV2 | undefined,
+    metadata: isRecord(value.metadata) ? value.metadata : {},
+  };
+}
+
+function parseNovelToStoryboardPipelineMetadata(
+  metadata: Record<string, unknown>
+): NovelToStoryboardPipelineMetadata | null {
+  if (metadata.pipelineMode !== 'novel-to-storyboard') {
+    return null;
+  }
+
+  return {
+    pipelineMode: 'novel-to-storyboard',
+    storyboardPayload: isRecord(metadata.storyboardPayload)
+      ? (metadata.storyboardPayload as Partial<StoryboardGenerateRequestV2>)
+      : {},
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

@@ -5,19 +5,24 @@ import {
   getStoryboardUserPrompt,
 } from '@/lib/prompts/storyboard';
 import {
-  type StoryboardGenerateRequest,
+  type StoryboardGenerateRequestV2,
 } from '@/features/storyboard/contracts';
+import { getPlatformRuntime } from '@/server/shared/platform';
 import { extractCharacters, extractScenes } from './extract-helpers';
 import { buildStoryboardUsageEvent, type StoryboardGenerationExecutionOptions } from './types';
 
 export function getStoryboardRequestError(
-  body: Partial<StoryboardGenerateRequest> | null | undefined
+  body: Partial<StoryboardGenerateRequestV2> | null | undefined
 ): string | null {
-  if (typeof body?.scriptText !== 'string' || !body.scriptText.trim()) {
-    return '请输入剧本文本';
+  if (normalizeStoryboardArtifactIds(body?.scriptArtifactIds).length > 0) {
+    return null;
   }
 
-  return null;
+  if (typeof body?.scriptText === 'string' && body.scriptText.trim()) {
+    return null;
+  }
+
+  return '请输入剧本文本或剧本工件';
 }
 
 export async function runStoryboardGeneration(
@@ -32,8 +37,11 @@ export async function runStoryboardGeneration(
     onArtifact,
   }: StoryboardGenerationExecutionOptions
 ): Promise<void> {
+  const source = await resolveStoryboardScriptSource(body);
+  const scriptText = source.scriptText;
+
   usageMeter?.record(
-    buildStoryboardUsageEvent(context, body.scriptText.length, 'character', {
+    buildStoryboardUsageEvent(context, scriptText.length, 'character', {
       phase: 'request_received',
       jobId,
     })
@@ -48,8 +56,8 @@ export async function runStoryboardGeneration(
   send({ step: 'parsing', message: '正在解析剧本结构...' });
   await onProgress?.({ progress: 10, currentStep: 'parsing' });
 
-  const characters = extractCharacters(body.scriptText);
-  const scenes = extractScenes(body.scriptText);
+  const characters = extractCharacters(scriptText);
+  const scenes = extractScenes(scriptText);
 
   send({
     step: 'parsed',
@@ -67,8 +75,8 @@ export async function runStoryboardGeneration(
   const resolvedColorTone = body.colorTone || '暖色调';
   const resolvedGenreLabel = body.genreLabel || '都市女频';
   const promptScriptText = body.safeMode
-    ? softenSensitiveContent(body.scriptText)
-    : body.scriptText;
+    ? softenSensitiveContent(scriptText)
+    : scriptText;
   const userPrompt = body.safeMode
     ? getStoryboardSafeUserPrompt(
         promptScriptText,
@@ -100,6 +108,9 @@ export async function runStoryboardGeneration(
         safeMode: Boolean(body.safeMode),
         characters,
         scenes,
+        ...(source.sourceScriptArtifactIds.length > 0
+          ? { sourceScriptArtifactIds: source.sourceScriptArtifactIds }
+          : {}),
       },
     });
     usageMeter?.record(
@@ -148,6 +159,58 @@ async function streamStoryboard(
   return fullContent;
 }
 
+export interface StoryboardScriptSourceResolution {
+  scriptText: string;
+  sourceScriptArtifactIds: string[];
+}
+
+export async function resolveStoryboardScriptSource(
+  body: StoryboardGenerateRequestV2
+): Promise<StoryboardScriptSourceResolution> {
+  const sourceScriptArtifactIds = normalizeStoryboardArtifactIds(body.scriptArtifactIds);
+  if (sourceScriptArtifactIds.length === 0) {
+    const fallbackScriptText = body.scriptText?.trim() ?? '';
+    if (!fallbackScriptText) {
+      throw new Error('请输入剧本文本或剧本工件');
+    }
+
+    return {
+      scriptText: fallbackScriptText,
+      sourceScriptArtifactIds: [],
+    };
+  }
+
+  const runtime = getPlatformRuntime();
+  const artifacts = await Promise.all(
+    sourceScriptArtifactIds.map(async (artifactId) => {
+      const artifact = await runtime.generationArtifacts.getById(artifactId);
+      if (!artifact) {
+        throw new Error(`SCRIPT_ARTIFACT_NOT_FOUND:${artifactId}`);
+      }
+
+      if (artifact.kind !== 'script') {
+        throw new Error(`SCRIPT_ARTIFACT_KIND_INVALID:${artifactId}`);
+      }
+
+      return artifact;
+    })
+  );
+
+  const scriptText = artifacts
+    .map((artifact, index) => {
+      if (!artifact.content?.trim()) {
+        throw new Error(`SCRIPT_ARTIFACT_EMPTY:${sourceScriptArtifactIds[index]}`);
+      }
+      return artifact.content;
+    })
+    .join('\n\n');
+
+  return {
+    scriptText,
+    sourceScriptArtifactIds,
+  };
+}
+
 function isContentPolicyError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
 
@@ -176,4 +239,16 @@ function softenSensitiveContent(text: string): string {
   return replacements.reduce((result, [pattern, replacement]) => {
     return result.replace(pattern, replacement);
   }, text);
+}
+
+function normalizeStoryboardArtifactIds(ids: string[] | null | undefined): string[] {
+  if (!Array.isArray(ids)) {
+    return [];
+  }
+
+  const normalized = ids
+    .map((id) => id.trim())
+    .filter((id) => id.length > 0);
+
+  return Array.from(new Set(normalized));
 }

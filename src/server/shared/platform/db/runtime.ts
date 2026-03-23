@@ -1,5 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type {
+  ArtifactRelation,
+  CreateArtifactRelationInput,
   CreateCreditAccountInput,
   CreateCreditLedgerEntryInput,
   CreateGenerationArtifactInput,
@@ -44,6 +46,7 @@ import type {
   Workspace,
 } from '@/server/shared/platform/domain';
 import type {
+  ArtifactRelationRepository,
   CreditAccountRepository,
   CreditLedgerRepository,
   GenerationArtifactRepository,
@@ -67,6 +70,7 @@ import {
   creditAccountsTable,
   creditLedgerEntriesTable,
   generationArtifactsTable,
+  artifactRelationsTable,
   generationJobsTable,
   organizationsTable,
   paymentOrdersTable,
@@ -89,6 +93,7 @@ export type DatabasePlatformRuntime = {
   sourceDocuments: SourceDocumentRepository;
   generationJobs: GenerationJobRepository;
   generationArtifacts: GenerationArtifactRepository;
+  artifactRelations: ArtifactRelationRepository;
   usageEvents: UsageEventRepository;
   subscriptions: SubscriptionRepository;
   paymentOrders: PaymentOrderRepository;
@@ -114,6 +119,7 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
     sourceDocuments: createSourceDocumentRepository(db),
     generationJobs: createGenerationJobRepository(db),
     generationArtifacts: createGenerationArtifactRepository(db),
+    artifactRelations: createArtifactRelationRepository(db),
     usageEvents: createUsageEventRepository(db),
     subscriptions: createSubscriptionRepository(db),
     paymentOrders: createPaymentOrderRepository(db),
@@ -127,7 +133,7 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
 
 function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRepository {
   return {
-    async getById(id) {
+    async getById(id: string) {
       return selectOne<User>(db.select({ data: usersTable.data }).from(usersTable).where(eq(usersTable.id, id)));
     },
     async getByEmail(email) {
@@ -612,6 +618,54 @@ function createGenerationArtifactRepository(db: ReturnType<typeof getDatabaseCli
   };
 }
 
+function createArtifactRelationRepository(db: ReturnType<typeof getDatabaseClient>): ArtifactRelationRepository {
+  async function createRelation(input: CreateArtifactRelationInput): Promise<ArtifactRelation> {
+    const now = getNowTimestamp();
+    const entity: ArtifactRelation = {
+      id: createEntityId('relation'),
+      projectId: input.projectId,
+      upstreamArtifactId: input.upstreamArtifactId,
+      downstreamArtifactId: input.downstreamArtifactId,
+      relationType: input.relationType ?? 'derived_from',
+      metadata: input.metadata,
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId: input.createdByUserId ?? null,
+      updatedByUserId: input.createdByUserId ?? null,
+    };
+    await db.insert(artifactRelationsTable).values(buildArtifactRelationRow(entity));
+    return entity;
+  }
+
+  return {
+    async getById(id) {
+      return selectOne<ArtifactRelation>(
+        db.select({ data: artifactRelationsTable.data }).from(artifactRelationsTable).where(eq(artifactRelationsTable.id, id))
+      );
+    },
+    async create(input: CreateArtifactRelationInput) {
+      return createRelation(input);
+    },
+    async createMany(inputs: CreateArtifactRelationInput[]) {
+      const created: ArtifactRelation[] = [];
+      for (const input of inputs) {
+        created.push(await createRelation(input));
+      }
+      return created;
+    },
+    async listByProjectId(projectId: string) {
+      return selectMany<ArtifactRelation>(
+        db.select({ data: artifactRelationsTable.data }).from(artifactRelationsTable).where(eq(artifactRelationsTable.projectId, projectId))
+      );
+    },
+    async listByDownstreamArtifactId(downstreamArtifactId: string) {
+      return selectMany<ArtifactRelation>(
+        db.select({ data: artifactRelationsTable.data }).from(artifactRelationsTable).where(eq(artifactRelationsTable.downstreamArtifactId, downstreamArtifactId))
+      );
+    },
+  };
+}
+
 function createUsageEventRepository(db: ReturnType<typeof getDatabaseClient>): UsageEventRepository {
   return {
     async getById(id) {
@@ -710,7 +764,6 @@ function createSubscriptionRepository(db: ReturnType<typeof getDatabaseClient>):
         currency: input.currency ?? null,
         trialEndsAt: input.trialEndsAt ?? null,
         canceledAt: input.canceledAt ?? null,
-        portalManagementEnabled: input.portalManagementEnabled ?? false,
         createdAt: now,
         updatedAt: now,
         createdByUserId: input.createdByUserId ?? null,
@@ -750,9 +803,9 @@ function createPaymentOrderRepository(db: ReturnType<typeof getDatabaseClient>):
     async getById(id) {
       return selectOne<PaymentOrder>(db.select({ data: paymentOrdersTable.data }).from(paymentOrdersTable).where(eq(paymentOrdersTable.id, id)));
     },
-    async getByCheckoutSessionId(checkoutSessionId) {
+    async getByProviderOrderId(providerOrderId) {
       return selectOne<PaymentOrder>(
-        db.select({ data: paymentOrdersTable.data }).from(paymentOrdersTable).where(eq(paymentOrdersTable.checkoutSessionId, checkoutSessionId))
+        db.select({ data: paymentOrdersTable.data }).from(paymentOrdersTable).where(eq(paymentOrdersTable.providerOrderId, providerOrderId))
       );
     },
     async listByOrganizationId(organizationId) {
@@ -774,7 +827,7 @@ function createPaymentOrderRepository(db: ReturnType<typeof getDatabaseClient>):
         amountCents: input.amountCents,
         currency: input.currency,
         creditsGranted: input.creditsGranted ?? null,
-        checkoutSessionId: input.checkoutSessionId ?? null,
+        providerOrderId: input.providerOrderId ?? null,
         providerCustomerId: input.providerCustomerId ?? null,
         providerSubscriptionId: input.providerSubscriptionId ?? null,
         paidAt: input.paidAt ?? null,
@@ -1145,6 +1198,16 @@ function buildGenerationArtifactRow(entity: GenerationArtifact): any {
   };
 }
 
+function buildArtifactRelationRow(entity: ArtifactRelation): any {
+  return {
+    ...entity,
+    metadata: entity.metadata ?? undefined,
+    createdByUserId: entity.createdByUserId ?? null,
+    updatedByUserId: entity.updatedByUserId ?? null,
+    data: entity,
+  };
+}
+
 function buildUsageEventRow(entity: UsageEvent): any {
   return {
     ...entity,
@@ -1178,7 +1241,6 @@ function buildSubscriptionRow(entity: Subscription): any {
     currency: entity.currency ?? null,
     trialEndsAt: entity.trialEndsAt ?? null,
     canceledAt: entity.canceledAt ?? null,
-    portalManagementEnabled: entity.portalManagementEnabled ?? false,
     createdByUserId: entity.createdByUserId ?? null,
     updatedByUserId: entity.updatedByUserId ?? null,
     data: entity,
@@ -1192,7 +1254,7 @@ function buildPaymentOrderRow(entity: PaymentOrder): any {
     planKey: entity.planKey ?? null,
     creditPackKey: entity.creditPackKey ?? null,
     creditsGranted: entity.creditsGranted ?? null,
-    checkoutSessionId: entity.checkoutSessionId ?? null,
+    providerOrderId: entity.providerOrderId ?? null,
     providerCustomerId: entity.providerCustomerId ?? null,
     providerSubscriptionId: entity.providerSubscriptionId ?? null,
     paidAt: entity.paidAt ?? null,

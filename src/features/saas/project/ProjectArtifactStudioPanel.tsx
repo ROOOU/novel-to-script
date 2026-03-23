@@ -22,6 +22,12 @@ interface ProjectArtifactStudioPanelProps {
   title: string;
   subtitle: string;
   artifacts: GenerationArtifact[];
+  allowedKinds?: ArtifactKind[];
+  initialKind?: ArtifactKind;
+  selectedArtifactId?: string | null;
+  hideKindTabs?: boolean;
+  scriptPrimaryActionLabel?: string;
+  onRunScriptPrimaryAction?: (artifact: GenerationArtifact) => Promise<void> | void;
   labels: {
     analysisTab: string;
     outlineTab: string;
@@ -85,19 +91,42 @@ export function ProjectArtifactStudioPanel({
   title,
   subtitle,
   artifacts,
+  allowedKinds,
+  initialKind,
+  selectedArtifactId: controlledSelectedArtifactId,
+  hideKindTabs,
+  scriptPrimaryActionLabel,
+  onRunScriptPrimaryAction,
   labels,
   onVersionSaved,
 }: ProjectArtifactStudioPanelProps) {
-  const [activeKind, setActiveKind] = useState<ArtifactKind>('analysis');
+  const [activeKind, setActiveKind] = useState<ArtifactKind>(initialKind ?? allowedKinds?.[0] ?? 'analysis');
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftContent, setDraftContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  const configuredKinds = useMemo(() => {
+    if (!allowedKinds?.length) {
+      return ARTIFACT_KINDS;
+    }
+
+    const allowedKindSet = new Set(allowedKinds);
+    return ARTIFACT_KINDS.filter(({ kind }) => allowedKindSet.has(kind));
+  }, [allowedKinds]);
+
   const availableKinds = useMemo(() => {
-    return ARTIFACT_KINDS.filter(({ kind }) => artifacts.some((artifact) => artifact.kind === kind));
-  }, [artifacts]);
+    return configuredKinds.filter(({ kind }) => artifacts.some((artifact) => artifact.kind === kind));
+  }, [artifacts, configuredKinds]);
+
+  useEffect(() => {
+    if (!initialKind) {
+      return;
+    }
+
+    setActiveKind(initialKind);
+  }, [initialKind]);
 
   useEffect(() => {
     if (availableKinds.length === 0) {
@@ -122,6 +151,18 @@ export function ProjectArtifactStudioPanel({
 
     setSelectedArtifactId(kindArtifacts[0]?.id ?? null);
   }, [kindArtifacts, selectedArtifactId]);
+
+  useEffect(() => {
+    if (!controlledSelectedArtifactId) {
+      return;
+    }
+
+    if (!kindArtifacts.some((artifact) => artifact.id === controlledSelectedArtifactId)) {
+      return;
+    }
+
+    setSelectedArtifactId(controlledSelectedArtifactId);
+  }, [controlledSelectedArtifactId, kindArtifacts]);
 
   const selectedArtifact = kindArtifacts.find((artifact) => artifact.id === selectedArtifactId) ?? kindArtifacts[0] ?? null;
 
@@ -156,6 +197,18 @@ export function ProjectArtifactStudioPanel({
     () => summarizeVersionDiff(previousVersion?.content, selectedArtifact?.content),
     [previousVersion?.content, selectedArtifact?.content]
   );
+
+  const sourceArtifactIds = useMemo(() => {
+    if (!selectedArtifact) {
+      return [];
+    }
+
+    return collectArtifactIdsFromMetadata(selectedArtifact.metadata);
+  }, [selectedArtifact]);
+
+  const downloadHref = selectedArtifact ? `/api/artifacts/${selectedArtifact.id}/download` : null;
+  const selectedArtifactContent = selectedArtifact?.content?.trim() ?? '';
+  const rootVersion = versionHistory[0] ?? null;
 
   const analysisDraft = useMemo(() => {
     if (activeKind !== 'analysis') {
@@ -220,6 +273,20 @@ export function ProjectArtifactStudioPanel({
     setDraftContent(selectedArtifact?.content ?? '');
   }
 
+  async function handleCopyArtifactContent() {
+    if (!selectedArtifactContent) {
+      setMessage('No content available to copy.');
+      return;
+    }
+
+    try {
+      await copyTextToClipboard(selectedArtifactContent);
+      setMessage('Copied artifact content to clipboard.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to copy artifact content.');
+    }
+  }
+
   return (
     <article className="card stack-gap">
       <div className="stack-gap-sm">
@@ -228,7 +295,7 @@ export function ProjectArtifactStudioPanel({
       </div>
 
       <section className="segmented-control">
-        {ARTIFACT_KINDS.map(({ kind, labelKey }) => (
+        {!hideKindTabs ? configuredKinds.map(({ kind, labelKey }) => (
           <button
             key={kind}
             type="button"
@@ -237,7 +304,7 @@ export function ProjectArtifactStudioPanel({
           >
             {labels[labelKey]}
           </button>
-        ))}
+        )) : null}
       </section>
 
       <div className="version-layout">
@@ -246,6 +313,7 @@ export function ProjectArtifactStudioPanel({
             <strong>{labels.versionHistory}</strong>
             <span>{kindArtifacts.length}</span>
           </div>
+          <p className="helper-text">{labels.selectVersion}</p>
           {kindArtifacts.length === 0 ? (
             <p>{labels.noVersions}</p>
           ) : (
@@ -300,6 +368,100 @@ export function ProjectArtifactStudioPanel({
               </div>
             </div>
 
+            <div className="stack-gap-sm">
+              <strong>Source context</strong>
+              <div className="artifact-meta-grid">
+                <div className="artifact-meta-card">
+                  <span>Current version</span>
+                  <strong>v{selectedArtifact.version}</strong>
+                </div>
+                <div className="artifact-meta-card">
+                  <span>Root version</span>
+                  <strong>{rootVersion ? `v${rootVersion.version}` : 'v1'}</strong>
+                </div>
+                <div className="artifact-meta-card">
+                  <span>Previous version</span>
+                  <strong>{previousVersion ? `v${previousVersion.version}` : 'Initial'}</strong>
+                </div>
+                <div className="artifact-meta-card">
+                  <span>Version group</span>
+                  <strong>{shortenId(selectedArtifact.versionGroupId ?? selectedArtifact.id)}</strong>
+                </div>
+              </div>
+              <div className="artifact-meta-grid">
+                <div className="artifact-meta-card">
+                  <span>Parent artifact</span>
+                  <strong>
+                    {selectedArtifact.parentArtifactId
+                      ? shortenId(selectedArtifact.parentArtifactId)
+                      : previousVersion
+                        ? shortenId(previousVersion.id)
+                        : '—'}
+                  </strong>
+                </div>
+                <div className="artifact-meta-card">
+                  <span>Generation job</span>
+                  <strong>{shortenId(selectedArtifact.generationJobId)}</strong>
+                </div>
+                <div className="artifact-meta-card">
+                  <span>Content source</span>
+                  <strong>{selectedArtifact.metadata ? 'artifact metadata' : 'artifact content'}</strong>
+                </div>
+                <div className="artifact-meta-card">
+                  <span>Source links</span>
+                  <strong>{sourceArtifactIds.length}</strong>
+                </div>
+              </div>
+              {sourceArtifactIds.length > 0 ? (
+                <div className="stack-gap-sm">
+                  <strong>Source artifact IDs</strong>
+                  <div className="list-row-meta" style={{ flexWrap: 'wrap' }}>
+                    {sourceArtifactIds.map((artifactId) => (
+                      <span key={artifactId} className="chip">
+                        {shortenId(artifactId)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="helper-text">
+                  No upstream artifact metadata found for this version.
+                </p>
+              )}
+            </div>
+
+            <div className="action-row">
+              <a
+                className="secondary-button"
+                href={downloadHref ?? '#'}
+                aria-disabled={!downloadHref}
+                onClick={(event) => {
+                  if (!downloadHref) {
+                    event.preventDefault();
+                  }
+                }}
+              >
+                Download current version
+              </a>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={handleCopyArtifactContent}
+                disabled={!selectedArtifactContent}
+              >
+                Copy content
+              </button>
+              {activeKind === 'script' && selectedArtifact && onRunScriptPrimaryAction ? (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => onRunScriptPrimaryAction(selectedArtifact)}
+                >
+                  {scriptPrimaryActionLabel ?? 'Continue from this script'}
+                </button>
+              ) : null}
+            </div>
+
             <p className="artifact-timestamp">
               {labels.createdAtLabel}: {new Date(selectedArtifact.createdAt).toLocaleString(locale)}
             </p>
@@ -343,8 +505,6 @@ export function ProjectArtifactStudioPanel({
               />
             ) : null}
 
-            {message ? <p className="helper-text">{message}</p> : null}
-
             <div className="action-row">
               <button type="button" className="secondary-button" onClick={resetDraft}>
                 {labels.resetDraft}
@@ -353,6 +513,7 @@ export function ProjectArtifactStudioPanel({
                 {labels.saveVersion}
               </button>
             </div>
+            {message ? <p className="helper-text">{message}</p> : null}
           </div>
         ) : (
           <div className="artifact-block">
@@ -688,4 +849,63 @@ function ScriptEditor({
       </label>
     </div>
   );
+}
+
+function collectArtifactIdsFromMetadata(metadata?: Record<string, unknown> | null): string[] {
+  if (!metadata) {
+    return [];
+  }
+
+  const rawValues = [
+    metadata.sourceScriptArtifactIds,
+    metadata.sourceArtifactIds,
+    metadata.upstreamArtifactIds,
+    metadata.sourceArtifactId,
+  ];
+
+  const artifactIds = rawValues.flatMap((value) => normalizeArtifactIdValue(value));
+  return Array.from(new Set(artifactIds));
+}
+
+function normalizeArtifactIdValue(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => normalizeArtifactIdValue(item));
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed ? [trimmed] : [];
+  }
+
+  return [];
+}
+
+function shortenId(value: string) {
+  if (value.length <= 12) {
+    return value;
+  }
+
+  return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+
+  if (!copied) {
+    throw new Error('Clipboard access is unavailable in this browser.');
+  }
 }

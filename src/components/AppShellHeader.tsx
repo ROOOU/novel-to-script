@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { buildLocalizedPath, SUPPORTED_LOCALES } from '@/i18n/config';
@@ -26,6 +27,55 @@ interface AppShellHeaderProps {
 export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+
+  useEffect(() => {
+    if (!signedIn) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) {
+        return;
+      }
+      setIsLoadingSummary(true);
+    });
+
+    void fetch('/api/billing/summary', { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error('BILLING_SUMMARY_FAILED');
+        }
+
+        return response.json() as Promise<{ creditAccount?: { availableCredits?: number | null } | null }>;
+      })
+      .then((payload) => {
+        if (!active) {
+          return;
+        }
+        setAvailableCredits(payload.creditAccount?.availableCredits ?? 0);
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        setAvailableCredits(null);
+      })
+      .finally(() => {
+        if (!active) {
+          return;
+        }
+        setIsLoadingSummary(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [signedIn]);
 
   async function handleSignOut() {
     await fetch('/api/auth/session', { method: 'DELETE' });
@@ -34,18 +84,14 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
   }
 
   const navItems = [
-    { href: `/${locale}`, label: labels.home },
-    { href: `/${locale}/pricing`, label: labels.pricing },
     { href: `/${locale}/projects`, label: labels.projects },
-    { href: `/${locale}/billing`, label: labels.billing },
-    { href: `/${locale}/redeem`, label: labels.redeem },
-    { href: `/${locale}/admin`, label: labels.admin },
+    { href: `/${locale}/pricing`, label: labels.pricing },
   ];
 
   return (
     <header className="app-header">
       <div className="header-inner">
-        <Link href={`/${locale}`} className="logo logo-link">
+        <Link href={signedIn ? `/${locale}/projects` : `/${locale}`} className="logo logo-link">
           <div className="logo-icon">NS</div>
           <span className="logo-text">NovelScript</span>
           <span className="logo-badge">{labels.brandBadge}</span>
@@ -56,7 +102,7 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
             <Link
               key={item.href}
               href={item.href}
-              className={`nav-link ${pathname === item.href ? 'active' : ''}`}
+              className={`nav-link ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? 'active' : ''}`}
             >
               {item.label}
             </Link>
@@ -76,9 +122,20 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
             ))}
           </div>
           {signedIn ? (
-            <button type="button" className="secondary-button ghost-button" onClick={handleSignOut}>
-              {labels.signOut}
-            </button>
+            <div className="header-account">
+              <div className="account-summary" aria-label="Account credits">
+                <span className="account-avatar" aria-hidden="true">
+                  NS
+                </span>
+                <span className="account-summary-copy">
+                  <strong>{isLoadingSummary ? '...' : availableCredits ?? 0}</strong>
+                  <span>{locale === 'en-US' ? 'Credits' : '额度'}</span>
+                </span>
+              </div>
+              <button type="button" className="secondary-button ghost-button" onClick={handleSignOut}>
+                {labels.signOut}
+              </button>
+            </div>
           ) : (
             <Link href={`/${locale}/login`} className="secondary-button ghost-button">
               {labels.signIn}

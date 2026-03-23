@@ -76,12 +76,10 @@ export function DevTestingClient({
   });
 
   const [creditsDelta, setCreditsDelta] = useState(120);
-  const [creditReason, setCreditReason] = useState('manual adjustment for QA');
+  const [creditReason, setCreditReason] = useState('credit adjustment for QA');
 
   const [purchaseKind, setPurchaseKind] = useState<'subscription' | 'credit-pack'>('credit-pack');
   const [amountCents, setAmountCents] = useState(9900);
-  const [currency, setCurrency] = useState<'CNY' | 'USD'>('USD');
-  const [provider, setProvider] = useState<'manual' | 'stripe'>('manual');
   const [reference, setReference] = useState('dev-demo-001');
 
   const [projectName, setProjectName] = useState('Dev Demo Project');
@@ -185,7 +183,7 @@ export function DevTestingClient({
           </div>
           <div className="list-row">
             <span className="helper-text">{labels.organizationId}: {organizationId}</span>
-            <span className="helper-text">Workspace: {workspaceId}</span>
+            <span className="helper-text">Project space: {workspaceId}</span>
           </div>
           {summary ? (
             <div className="stack-gap-sm">
@@ -250,17 +248,11 @@ export function DevTestingClient({
             </label>
             <label className="field">
               <span>{labels.currency}</span>
-              <select value={currency} onChange={(event) => setCurrency(event.target.value as 'CNY' | 'USD')}>
-                <option value="USD">USD</option>
-                <option value="CNY">CNY</option>
-              </select>
+              <input value="USD" readOnly />
             </label>
             <label className="field">
               <span>{labels.provider}</span>
-              <select value={provider} onChange={(event) => setProvider(event.target.value as 'manual' | 'stripe')}>
-                <option value="manual">manual</option>
-                <option value="stripe">stripe</option>
-              </select>
+              <input value="internal" readOnly />
             </label>
           </div>
           <label className="field">
@@ -276,8 +268,8 @@ export function DevTestingClient({
                 workspaceId,
                 purchaseKind,
                 amountCents,
-                currency,
-                provider,
+                currency: 'USD',
+                provider: 'internal',
                 reference,
               })
             }

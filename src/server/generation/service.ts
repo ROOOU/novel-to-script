@@ -1,5 +1,5 @@
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
-import type { StoryboardGenerateRequest } from '@/features/storyboard/contracts';
+import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
 import { getProjectGenerationScheduler } from './queue';
 import { createPersistedGenerationJob } from './processor';
 
@@ -12,7 +12,8 @@ export async function createProjectGenerationJob(input: {
   projectId: string;
   userId: string;
   kind: 'script-generation' | 'storyboard-generation';
-  body: ScriptGenerationRequest | StoryboardGenerateRequest;
+  body: ScriptGenerationRequest | StoryboardGenerateRequestV2;
+  metadata?: Record<string, unknown>;
 }) {
   const job = await createPersistedGenerationJob(input);
   await getProjectGenerationScheduler().schedule(job.id);

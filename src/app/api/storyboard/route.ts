@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
       {
         snapshot: usageSnapshot,
         pendingRequestCount: 1,
-        pendingCharacterCount: body.scriptText.length,
+        pendingCharacterCount: body.scriptText?.length ?? 0,
         activeJobCount: activeJobs.length,
       }
     );

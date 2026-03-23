@@ -1,4 +1,6 @@
 import type {
+  ArtifactRelation,
+  CreateArtifactRelationInput,
   CreateCreditAccountInput,
   CreateCreditLedgerEntryInput,
   CreateGenerationArtifactInput,
@@ -125,6 +127,14 @@ export interface GenerationArtifactRepository {
   archive(id: string, updatedByUserId?: string | null): Promise<GenerationArtifact>;
 }
 
+export interface ArtifactRelationRepository {
+  getById(id: string): Promise<ArtifactRelation | null>;
+  create(input: CreateArtifactRelationInput): Promise<ArtifactRelation>;
+  createMany(inputs: CreateArtifactRelationInput[]): Promise<ArtifactRelation[]>;
+  listByProjectId(projectId: string): Promise<ArtifactRelation[]>;
+  listByDownstreamArtifactId(downstreamArtifactId: string): Promise<ArtifactRelation[]>;
+}
+
 export interface UsageEventRepository {
   getById(id: string): Promise<UsageEvent | null>;
   listByOrganizationId(organizationId: string): Promise<UsageEvent[]>;
@@ -157,7 +167,7 @@ export interface SubscriptionRepository {
 
 export interface PaymentOrderRepository {
   getById(id: string): Promise<PaymentOrder | null>;
-  getByCheckoutSessionId(checkoutSessionId: string): Promise<PaymentOrder | null>;
+  getByProviderOrderId(providerOrderId: string): Promise<PaymentOrder | null>;
   listByOrganizationId(organizationId: string): Promise<PaymentOrder[]>;
   create(input: CreatePaymentOrderInput): Promise<PaymentOrder>;
   update(id: string, input: UpdatePaymentOrderInput): Promise<PaymentOrder>;
