@@ -48,14 +48,15 @@ export function PricingClient({
     const key = `${payload.purchaseKind}:${payload.planKey ?? payload.creditPackKey ?? 'unknown'}`;
     setBusyKey(key);
     setMessage(null);
-    const response = await fetch('/api/billing/checkout-session', {
+    const response = await fetch(resolvePayPalPurchaseEndpoint(payload.purchaseKind), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        ...payload,
-        currency: 'USD',
+        ...(payload.purchaseKind === 'subscription'
+          ? { planKey: payload.planKey, requestedCurrency: 'USD' }
+          : { creditPackKey: payload.creditPackKey, requestedCurrency: 'USD' }),
       }),
     });
     const result = await response.json();
@@ -165,4 +166,10 @@ function getFreePlanActionLabel(locale: SupportedLocale) {
 
 function getDefaultPricingError(locale: SupportedLocale) {
   return locale === 'en-US' ? 'Unable to start checkout.' : '暂时无法发起结账。';
+}
+
+function resolvePayPalPurchaseEndpoint(purchaseKind: 'subscription' | 'credit-pack') {
+  return purchaseKind === 'subscription'
+    ? '/api/billing/paypal/create-subscription'
+    : '/api/billing/paypal/create-order';
 }

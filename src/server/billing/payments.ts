@@ -16,8 +16,6 @@ import {
 } from '@/server/billing/paypal';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
-type CheckoutPurchaseKind = 'subscription' | 'credit-pack';
-
 export async function getBillingSummary(organizationId: string) {
   const runtime = getPlatformRuntime();
   const [subscription, creditAccount, paymentOrders, ledgerEntries] = await Promise.all([
@@ -33,38 +31,6 @@ export async function getBillingSummary(organizationId: string) {
     paymentOrders: paymentOrders.sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
     ledgerEntries: ledgerEntries.sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
   };
-}
-
-export async function createCheckoutOrder(input: {
-  organizationId: string;
-  userId: string;
-  email: string;
-  locale: string;
-  origin: string;
-  purchaseKind: CheckoutPurchaseKind;
-  planKey?: string;
-  creditPackKey?: string;
-  requestedCurrency?: string;
-}) {
-  return input.purchaseKind === 'subscription'
-    ? createSubscriptionCheckout({
-        organizationId: input.organizationId,
-        userId: input.userId,
-        email: input.email,
-        locale: input.locale,
-        origin: input.origin,
-        planKey: input.planKey as PlanKey,
-        requestedCurrency: input.requestedCurrency,
-      })
-    : createCreditPackCheckout({
-        organizationId: input.organizationId,
-        userId: input.userId,
-        email: input.email,
-        locale: input.locale,
-        origin: input.origin,
-        creditPackKey: input.creditPackKey as CreditPackKey,
-        requestedCurrency: input.requestedCurrency,
-      });
 }
 
 export async function createSubscriptionCheckout(input: {
@@ -199,10 +165,6 @@ export async function createCreditPackCheckout(input: {
     providerOrderId: approval.id,
     mode: 'paypal' as const,
   };
-}
-
-export async function createBillingPortalSession() {
-  throw new Error('PAYPAL_BILLING_PORTAL_NOT_SUPPORTED');
 }
 
 export async function fulfillPaymentOrder(
@@ -400,7 +362,7 @@ async function createPayPalSubscriptionWithPlan(input: {
 function buildBillingReturnUrl(input: {
   origin: string;
   locale: string;
-  purchaseKind: CheckoutPurchaseKind;
+  purchaseKind: 'subscription' | 'credit-pack';
   paymentOrderId: string;
 }) {
   const url = new URL(`${input.origin}${getLocalizedPath(input.locale, 'billing')}`);
@@ -410,7 +372,7 @@ function buildBillingReturnUrl(input: {
   return url.toString();
 }
 
-function buildPricingCancelUrl(origin: string, locale: string, purchaseKind: CheckoutPurchaseKind) {
+function buildPricingCancelUrl(origin: string, locale: string, purchaseKind: 'subscription' | 'credit-pack') {
   const url = new URL(`${origin}${getLocalizedPath(locale, 'pricing')}`);
   url.searchParams.set('checkout', 'cancelled');
   url.searchParams.set('purchaseKind', purchaseKind);
