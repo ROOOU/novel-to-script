@@ -147,7 +147,7 @@ describe('platform runtime', () => {
         workspaceId: 'ws_test',
         periodStart: '2026-03-01T00:00:00.000Z',
         periodEnd: '2026-04-01T00:00:00.000Z',
-        requests: 20,
+        requests: 30,
         jobs: 1,
         tokens: 0,
         characters: 10,

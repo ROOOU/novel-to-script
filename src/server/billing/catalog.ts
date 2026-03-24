@@ -33,6 +33,14 @@ export interface CreditPackCatalogEntry {
   prices: Record<SupportedCurrency, MoneyAmount>;
 }
 
+interface PlanCatalogDefinition extends Omit<PlanCatalogEntry, 'prices'> {
+  monthlyPriceCents: number;
+}
+
+interface CreditPackCatalogDefinition extends Omit<CreditPackCatalogEntry, 'prices'> {
+  priceCents: number;
+}
+
 export interface PurchaseDescriptor {
   purchaseKind: PurchaseKind;
   provider: BillingProvider;
@@ -43,7 +51,14 @@ export interface PurchaseDescriptor {
   creditsGranted?: number;
 }
 
-export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
+export const PLAN_ORDER: readonly PlanKey[] = ['free', 'creator', 'pro'];
+export const CREDIT_PACK_ORDER: readonly CreditPackKey[] = [
+  'credits-50',
+  'credits-200',
+  'credits-500',
+];
+
+const PLAN_DEFINITIONS: Record<PlanKey, PlanCatalogDefinition> = {
   free: {
     key: 'free',
     name: {
@@ -56,9 +71,7 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
     },
     pricingRegion: ['global'],
     billingInterval: 'monthly',
-    prices: {
-      USD: { amountCents: 0, currency: 'USD' },
-    },
+    monthlyPriceCents: 0,
     monthlyCredits: 30,
     entitlements: {
       maxProjects: 2,
@@ -84,9 +97,7 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
     },
     pricingRegion: ['global'],
     billingInterval: 'monthly',
-    prices: {
-      USD: { amountCents: 990, currency: 'USD' },
-    },
+    monthlyPriceCents: 990,
     monthlyCredits: 200,
     entitlements: {
       maxProjects: 15,
@@ -112,9 +123,7 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
     },
     pricingRegion: ['global'],
     billingInterval: 'monthly',
-    prices: {
-      USD: { amountCents: 2_900, currency: 'USD' },
-    },
+    monthlyPriceCents: 2_900,
     monthlyCredits: 600,
     entitlements: {
       maxProjects: null,
@@ -130,29 +139,31 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
   },
 };
 
-export const CREDIT_PACK_CATALOG: Record<CreditPackKey, CreditPackCatalogEntry> = {
+const CREDIT_PACK_DEFINITIONS: Record<CreditPackKey, CreditPackCatalogDefinition> = {
   'credits-50': {
     key: 'credits-50',
     credits: 50,
-    prices: {
-      USD: { amountCents: 490, currency: 'USD' },
-    },
+    priceCents: 490,
   },
   'credits-200': {
     key: 'credits-200',
     credits: 200,
-    prices: {
-      USD: { amountCents: 1_490, currency: 'USD' },
-    },
+    priceCents: 1_490,
   },
   'credits-500': {
     key: 'credits-500',
     credits: 500,
-    prices: {
-      USD: { amountCents: 2_990, currency: 'USD' },
-    },
+    priceCents: 2_990,
   },
 };
+
+export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = createPlanCatalog(PLAN_DEFINITIONS);
+export const PLAN_CATALOG_ENTRIES: PlanCatalogEntry[] = PLAN_ORDER.map((key) => PLAN_CATALOG[key]);
+export const CREDIT_PACK_CATALOG: Record<CreditPackKey, CreditPackCatalogEntry> =
+  createCreditPackCatalog(CREDIT_PACK_DEFINITIONS);
+export const CREDIT_PACK_CATALOG_ENTRIES: CreditPackCatalogEntry[] = CREDIT_PACK_ORDER.map(
+  (key) => CREDIT_PACK_CATALOG[key]
+);
 
 export function getPlanCatalogEntry(planKey: string): PlanCatalogEntry {
   const entry = PLAN_CATALOG[planKey as PlanKey];
@@ -233,4 +244,45 @@ export function estimateJobCredits(
   }
 
   return 30 + Math.max(1, options.episodeCount ?? 1) * 15;
+}
+
+function createPlanCatalog(
+  definitions: Record<PlanKey, PlanCatalogDefinition>
+): Record<PlanKey, PlanCatalogEntry> {
+  return PLAN_ORDER.reduce(
+    (catalog, key) => {
+      const { monthlyPriceCents, ...definition } = definitions[key];
+      catalog[key] = {
+        ...definition,
+        prices: createUsdPriceMap(monthlyPriceCents),
+      };
+      return catalog;
+    },
+    {} as Record<PlanKey, PlanCatalogEntry>
+  );
+}
+
+function createCreditPackCatalog(
+  definitions: Record<CreditPackKey, CreditPackCatalogDefinition>
+): Record<CreditPackKey, CreditPackCatalogEntry> {
+  return CREDIT_PACK_ORDER.reduce(
+    (catalog, key) => {
+      const { priceCents, ...definition } = definitions[key];
+      catalog[key] = {
+        ...definition,
+        prices: createUsdPriceMap(priceCents),
+      };
+      return catalog;
+    },
+    {} as Record<CreditPackKey, CreditPackCatalogEntry>
+  );
+}
+
+function createUsdPriceMap(amountCents: number): Record<SupportedCurrency, MoneyAmount> {
+  return {
+    USD: {
+      amountCents,
+      currency: 'USD',
+    },
+  };
 }

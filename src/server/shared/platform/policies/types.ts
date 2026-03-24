@@ -5,7 +5,6 @@ export type PlatformFeatureKey =
   | 'storyboard-generation'
   | 'project-history'
   | 'workspace-sharing'
-  | 'team-collaboration'
   | 'branding-export'
   | 'custom-model'
   | 'api-access'

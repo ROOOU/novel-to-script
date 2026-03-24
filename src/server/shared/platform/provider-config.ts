@@ -59,8 +59,7 @@ export function resolvePlatformLLMConfig(
 
 function getPlanDefaultModel(context: PlatformRequestContext): string {
   switch (context.plan) {
-    case 'enterprise':
-    case 'team':
+    case 'creator':
     case 'pro':
       return 'gpt-4o';
     case 'free':

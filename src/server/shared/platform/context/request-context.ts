@@ -29,9 +29,8 @@ export function createPlatformRequestContext(
 
 export function normalizePlan(plan: PlatformPlan | string | null | undefined): PlatformPlan {
   switch (plan) {
+    case 'creator':
     case 'pro':
-    case 'team':
-    case 'enterprise':
       return plan;
     case 'free':
     default:

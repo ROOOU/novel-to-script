@@ -1,4 +1,4 @@
-export type PlatformPlan = 'free' | 'pro' | 'team' | 'enterprise';
+export type PlatformPlan = 'free' | 'creator' | 'pro';
 
 export type PlatformWorkspaceSource =
   | 'header'

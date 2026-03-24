@@ -429,9 +429,10 @@ async function failAndRelease(jobId: string, errorMessage: string) {
   });
 }
 
-function mapPlanKeyToPlatformPlan(planKey: string): 'free' | 'pro' | 'team' | 'enterprise' {
+function mapPlanKeyToPlatformPlan(planKey: string): 'free' | 'creator' | 'pro' {
   switch (planKey) {
     case 'creator':
+      return 'creator';
     case 'pro':
       return 'pro';
     case 'free':
