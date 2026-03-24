@@ -5,6 +5,7 @@ export const zhCN: Dictionary = {
     brandBadge: 'AI 短剧工作室',
     language: '语言',
     signIn: '登录',
+    signUp: '注册',
     signOut: '退出登录',
     pricing: '价格',
     projects: '项目',

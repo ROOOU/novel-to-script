@@ -5,6 +5,7 @@ export const enUS: Dictionary = {
     brandBadge: 'AI Drama Studio',
     language: 'Language',
     signIn: 'Sign in',
+    signUp: 'Sign up',
     signOut: 'Sign out',
     pricing: 'Pricing',
     projects: 'Projects',

@@ -3,6 +3,7 @@ export interface Dictionary {
     brandBadge: string;
     language: string;
     signIn: string;
+    signUp: string;
     signOut: string;
     pricing: string;
     projects: string;

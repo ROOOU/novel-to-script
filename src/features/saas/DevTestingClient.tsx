@@ -183,7 +183,7 @@ export function DevTestingClient({
           </div>
           <div className="list-row">
             <span className="helper-text">{labels.organizationId}: {organizationId}</span>
-            <span className="helper-text">Project space: {workspaceId}</span>
+            <span className="helper-text">{locale === 'en-US' ? 'Execution scope' : '执行范围'}: {workspaceId}</span>
           </div>
           {summary ? (
             <div className="stack-gap-sm">

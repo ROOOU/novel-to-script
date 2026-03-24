@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { NavLinks } from '@/app/nav-links';
+import { MobileNav } from '@/components/MobileNav';
 import { buildLocalizedPath, SUPPORTED_LOCALES } from '@/i18n/config';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 export interface AppShellHeaderLabels {
   brandBadge: string;
   signIn: string;
+  signUp: string;
   signOut: string;
   home: string;
   pricing: string;
@@ -22,13 +25,22 @@ interface AppShellHeaderProps {
   locale: SupportedLocale;
   labels: AppShellHeaderLabels;
   signedIn: boolean;
+  userDisplayName?: string | null;
+  initialCredits?: number | null;
 }
 
-export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps) {
+export function AppShellHeader({
+  locale,
+  labels,
+  signedIn,
+  userDisplayName,
+  initialCredits,
+}: AppShellHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+  const [availableCredits, setAvailableCredits] = useState<number | null>(initialCredits ?? null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const userInitials = getInitials(userDisplayName);
 
   useEffect(() => {
     if (!signedIn) {
@@ -41,7 +53,7 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
       if (!active) {
         return;
       }
-      setIsLoadingSummary(true);
+      setIsLoadingSummary(initialCredits == null);
     });
 
     void fetch('/api/billing/summary', { signal: controller.signal })
@@ -75,7 +87,7 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
       active = false;
       controller.abort();
     };
-  }, [signedIn]);
+  }, [initialCredits, signedIn]);
 
   async function handleSignOut() {
     await fetch('/api/auth/session', { method: 'DELETE' });
@@ -83,31 +95,24 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
     router.refresh();
   }
 
-  const navItems = [
-    { href: `/${locale}/projects`, label: labels.projects },
-    { href: `/${locale}/pricing`, label: labels.pricing },
-  ];
-
   return (
     <header className="app-header">
       <div className="header-inner">
         <Link href={signedIn ? `/${locale}/projects` : `/${locale}`} className="logo logo-link">
-          <div className="logo-icon">NS</div>
-          <span className="logo-text">NovelScript</span>
-          <span className="logo-badge">{labels.brandBadge}</span>
+          <div className="logo-lockup">
+            <div className="logo-icon">NS</div>
+            <div className="logo-copy">
+              <span className="logo-text">NovelScript</span>
+              <span className="logo-badge">{labels.brandBadge}</span>
+            </div>
+          </div>
         </Link>
 
-        <nav className="header-nav header-nav-desktop" aria-label="Main navigation">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`nav-link ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? 'active' : ''}`}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
+        <NavLinks
+          locale={locale}
+          labels={{ projects: labels.projects, pricing: labels.pricing }}
+          className="header-nav header-nav-desktop"
+        />
 
         <div className="header-actions">
           <div className="locale-switcher" aria-label="Locale switcher">
@@ -124,12 +129,16 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
           {signedIn ? (
             <div className="header-account">
               <div className="account-summary" aria-label="Account credits">
+                <span className="account-summary-label">{locale === 'en-US' ? 'Credits' : '积分'}</span>
+                <strong>{isLoadingSummary ? '...' : (availableCredits ?? 0).toLocaleString(locale)}</strong>
+              </div>
+              <div className="account-identity" aria-label="Signed in user">
                 <span className="account-avatar" aria-hidden="true">
-                  NS
+                  {userInitials}
                 </span>
                 <span className="account-summary-copy">
-                  <strong>{isLoadingSummary ? '...' : availableCredits ?? 0}</strong>
-                  <span>{locale === 'en-US' ? 'Credits' : '额度'}</span>
+                  <strong>{userDisplayName || 'NovelScript'}</strong>
+                  <span>{locale === 'en-US' ? 'Creator account' : '创作者账号'}</span>
                 </span>
               </div>
               <button type="button" className="secondary-button ghost-button" onClick={handleSignOut}>
@@ -137,12 +146,51 @@ export function AppShellHeader({ locale, labels, signedIn }: AppShellHeaderProps
               </button>
             </div>
           ) : (
-            <Link href={`/${locale}/login`} className="secondary-button ghost-button">
-              {labels.signIn}
-            </Link>
+            <div className="header-auth-actions">
+              <Link href={`/${locale}/login`} className="secondary-button ghost-button">
+                {labels.signIn}
+              </Link>
+              <Link href={`/${locale}/login`} className="primary-button">
+                {labels.signUp}
+              </Link>
+            </div>
           )}
+          <MobileNav
+            locale={locale}
+            pathname={pathname || '/'}
+            navLabels={{ projects: labels.projects, pricing: labels.pricing }}
+            authLabels={{
+              signIn: labels.signIn,
+              signUp: labels.signUp,
+              signOut: labels.signOut,
+              credits: locale === 'en-US' ? 'credits' : '积分',
+            }}
+            signedIn={signedIn}
+            userDisplayName={userDisplayName}
+            userInitials={userInitials}
+            availableCredits={availableCredits}
+            onSignOut={handleSignOut}
+          />
         </div>
       </div>
     </header>
   );
+}
+
+function getInitials(displayName?: string | null) {
+  const normalized = displayName?.trim();
+  if (!normalized) {
+    return 'NS';
+  }
+
+  const parts = normalized.split(/\s+/).filter(Boolean);
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0] ?? '')
+    .join('')
+    .toUpperCase();
 }

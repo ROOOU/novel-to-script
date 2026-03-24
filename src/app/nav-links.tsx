@@ -2,23 +2,37 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { SupportedLocale } from '@/server/shared/platform/domain';
 
-const NAV_ITEMS = [
-  { href: '/projects', label: 'Projects' },
-  { href: '/pricing', label: 'Pricing' },
-];
+interface NavLabels {
+  projects: string;
+  pricing: string;
+}
 
-export function NavLinks() {
+interface NavLinksProps {
+  locale: SupportedLocale;
+  labels: NavLabels;
+  className?: string;
+  onNavigate?: () => void;
+}
+
+export interface PrimaryNavItem {
+  href: string;
+  label: string;
+}
+
+export function NavLinks({ locale, labels, className = 'header-nav', onNavigate }: NavLinksProps) {
   const pathname = usePathname();
-  const locale = getLocaleFromPathname(pathname);
+  const items = getPrimaryNavItems(locale, labels);
 
   return (
-    <nav className="header-nav">
-      {NAV_ITEMS.map((item) => (
+    <nav className={className} aria-label="Main navigation">
+      {items.map((item) => (
         <Link
           key={item.href}
-          href={`/${locale}${item.href}`}
-          className={`nav-link ${isActivePath(pathname, item.href, locale) ? 'active' : ''}`}
+          href={item.href}
+          className={`nav-link ${isActivePath(pathname, item.href) ? 'active' : ''}`}
+          onClick={onNavigate}
         >
           {item.label}
         </Link>
@@ -27,11 +41,13 @@ export function NavLinks() {
   );
 }
 
-function getLocaleFromPathname(pathname: string): 'zh-CN' | 'en-US' {
-  return pathname.startsWith('/en-US') ? 'en-US' : 'zh-CN';
+export function getPrimaryNavItems(locale: SupportedLocale, labels: NavLabels): PrimaryNavItem[] {
+  return [
+    { href: `/${locale}/projects`, label: labels.projects },
+    { href: `/${locale}/pricing`, label: labels.pricing },
+  ];
 }
 
-function isActivePath(pathname: string, itemPath: string, locale: 'zh-CN' | 'en-US'): boolean {
-  const targetPath = `/${locale}${itemPath}`;
-  return pathname === targetPath || pathname.startsWith(`${targetPath}/`);
+export function isActivePath(pathname: string, itemPath: string): boolean {
+  return pathname === itemPath || pathname.startsWith(`${itemPath}/`);
 }

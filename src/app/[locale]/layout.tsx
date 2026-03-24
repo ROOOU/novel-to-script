@@ -48,6 +48,7 @@ export default async function LocaleLayout({
         labels={{
           brandBadge: dictionary.common.brandBadge,
           signIn: dictionary.common.signIn,
+          signUp: dictionary.common.signUp,
           signOut: dictionary.common.signOut,
           home: dictionary.nav.home,
           pricing: dictionary.nav.pricing,
@@ -56,6 +57,8 @@ export default async function LocaleLayout({
           redeem: dictionary.nav.redeem,
           admin: dictionary.nav.admin,
         }}
+        userDisplayName={viewer?.user.displayName}
+        initialCredits={viewer?.creditAccount?.availableCredits ?? null}
       />
       <main>{children}</main>
     </>
