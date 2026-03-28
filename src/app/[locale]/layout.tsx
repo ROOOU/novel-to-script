@@ -37,7 +37,7 @@ export default async function LocaleLayout({
 
   const [dictionary, viewer] = await Promise.all([
     getDictionary(locale),
-    getCurrentViewer(),
+    resolveViewerSafely(),
   ]);
 
   return (
@@ -63,4 +63,12 @@ export default async function LocaleLayout({
       <main>{children}</main>
     </>
   );
+}
+
+async function resolveViewerSafely() {
+  try {
+    return await getCurrentViewer();
+  } catch {
+    return null;
+  }
 }

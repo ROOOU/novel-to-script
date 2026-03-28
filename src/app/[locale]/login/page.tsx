@@ -9,11 +9,19 @@ export default async function LoginPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const viewer = await getCurrentViewer();
+  const viewer = await resolveViewerSafely();
   if (viewer) {
     redirect(`/${viewer.workspace.defaultLocale ?? locale}/projects`);
   }
 
   const resolvedLocale = isSupportedLocale(locale) ? locale : 'zh-CN';
   return <LoginForm locale={resolvedLocale} />;
+}
+
+async function resolveViewerSafely() {
+  try {
+    return await getCurrentViewer();
+  } catch {
+    return null;
+  }
 }

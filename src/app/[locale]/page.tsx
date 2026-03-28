@@ -11,7 +11,7 @@ export default async function LocalizedHomePage({
   const { locale } = await params;
   const [dictionary, viewer] = await Promise.all([
     getDictionary(locale),
-    getCurrentViewer(),
+    resolveViewerSafely(),
   ]);
 
   if (viewer) {
@@ -19,4 +19,12 @@ export default async function LocalizedHomePage({
   }
 
   return <LandingPage locale={locale === 'en-US' ? 'en-US' : 'zh-CN'} dictionary={dictionary} />;
+}
+
+async function resolveViewerSafely() {
+  try {
+    return await getCurrentViewer();
+  } catch {
+    return null;
+  }
 }

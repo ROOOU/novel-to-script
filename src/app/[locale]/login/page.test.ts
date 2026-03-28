@@ -47,4 +47,18 @@ describe('login page', () => {
 
     expect(mocks.redirect).toHaveBeenCalledWith('/en-US/projects');
   });
+
+  it('renders the login form when auth lookup fails', async () => {
+    mocks.getCurrentViewer.mockRejectedValue(new Error('CLERK_PRIMARY_EMAIL_MISSING'));
+
+    const LoginPage = (await import('@/app/[locale]/login/page')).default;
+    const page = await LoginPage({
+      params: Promise.resolve({ locale: 'en-US' }),
+    });
+
+    expect(page.type).toBe(LoginForm);
+    expect(page.props).toEqual({
+      locale: 'en-US',
+    });
+  });
 });
