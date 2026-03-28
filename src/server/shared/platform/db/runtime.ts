@@ -141,6 +141,14 @@ function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRep
         db.select({ data: usersTable.data }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase()))
       );
     },
+    async getByAuthUserId(authUserId) {
+      return selectOne<User>(
+        db
+          .select({ data: usersTable.data })
+          .from(usersTable)
+          .where(eq(usersTable.authUserId, authUserId.trim()))
+      );
+    },
     async listByIds(ids) {
       if (ids.length === 0) {
         return [];
@@ -156,11 +164,15 @@ function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRep
         id: createEntityId('user'),
         email: input.email.trim().toLowerCase(),
         displayName: input.displayName.trim(),
+        authProvider: input.authProvider ?? null,
+        authUserId: input.authUserId ?? null,
         passwordHash: input.passwordHash ?? null,
         avatarUrl: input.avatarUrl ?? null,
         preferredLocale: input.preferredLocale ?? 'zh-CN',
         defaultOrganizationId: input.defaultOrganizationId ?? null,
         status: input.status ?? 'active',
+        emailVerifiedAt: input.emailVerifiedAt ?? null,
+        lastAuthSyncAt: input.lastAuthSyncAt ?? null,
         lastLoginAt: null,
         createdAt: now,
         updatedAt: now,
@@ -1098,10 +1110,14 @@ function normalizeRedeemCode(code: string): string {
 function buildUserRow(entity: User): any {
   return {
     ...entity,
+    authProvider: entity.authProvider ?? null,
+    authUserId: entity.authUserId ?? null,
     passwordHash: entity.passwordHash ?? null,
     avatarUrl: entity.avatarUrl ?? null,
     preferredLocale: entity.preferredLocale ?? null,
     defaultOrganizationId: entity.defaultOrganizationId ?? null,
+    emailVerifiedAt: entity.emailVerifiedAt ?? null,
+    lastAuthSyncAt: entity.lastAuthSyncAt ?? null,
     lastLoginAt: entity.lastLoginAt ?? null,
     createdByUserId: entity.createdByUserId ?? null,
     updatedByUserId: entity.updatedByUserId ?? null,

@@ -49,17 +49,22 @@ export const usersTable = pgTable(
     id: text('id').primaryKey(),
     email: text('email').notNull(),
     displayName: text('displayName').notNull(),
+    authProvider: text('authProvider'),
+    authUserId: text('authUserId'),
     passwordHash: text('passwordHash'),
     avatarUrl: text('avatarUrl'),
     preferredLocale: text('preferredLocale'),
     defaultOrganizationId: text('defaultOrganizationId'),
     status: text('status').notNull(),
+    emailVerifiedAt: timestamp('emailVerifiedAt', timestampOptions),
+    lastAuthSyncAt: timestamp('lastAuthSyncAt', timestampOptions),
     lastLoginAt: timestamp('lastLoginAt', timestampOptions),
     ...auditColumns(),
     data: dataColumn<User>(),
   },
   (table) => ({
     emailIdx: uniqueIndex('users_email_idx').on(table.email),
+    authUserIdIdx: uniqueIndex('users_auth_user_id_idx').on(table.authUserId),
     defaultOrganizationIdx: index('users_default_organization_idx').on(table.defaultOrganizationId),
   })
 );

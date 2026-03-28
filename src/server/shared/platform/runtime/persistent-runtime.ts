@@ -120,6 +120,11 @@ function createUserRepository(): UserRepository {
       const store = await readPlatformStore();
       return store.users.find((user) => user.email.toLowerCase() === normalizedEmail) ?? null;
     },
+    async getByAuthUserId(authUserId) {
+      const normalizedAuthUserId = authUserId.trim();
+      const store = await readPlatformStore();
+      return store.users.find((user) => user.authUserId === normalizedAuthUserId) ?? null;
+    },
     async listByIds(ids) {
       const idSet = new Set(ids);
       const store = await readPlatformStore();
@@ -132,11 +137,15 @@ function createUserRepository(): UserRepository {
           id: createEntityId('user'),
           email: input.email.trim().toLowerCase(),
           displayName: input.displayName.trim(),
+          authProvider: input.authProvider ?? null,
+          authUserId: input.authUserId ?? null,
           passwordHash: input.passwordHash ?? null,
           avatarUrl: input.avatarUrl ?? null,
           preferredLocale: input.preferredLocale ?? 'zh-CN',
           defaultOrganizationId: input.defaultOrganizationId ?? null,
           status: input.status ?? 'active',
+          emailVerifiedAt: input.emailVerifiedAt ?? null,
+          lastAuthSyncAt: input.lastAuthSyncAt ?? null,
           lastLoginAt: null,
           createdAt: now,
           updatedAt: now,

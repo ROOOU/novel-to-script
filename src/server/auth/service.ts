@@ -13,6 +13,59 @@ export interface AuthenticateInput {
   locale: SupportedLocale;
 }
 
+export interface ClerkIdentityInput {
+  authUserId: string;
+  email: string;
+  emailVerified: boolean;
+  displayName: string;
+  avatarUrl?: string | null;
+  locale: SupportedLocale;
+}
+
+export async function syncViewerFromClerkIdentity(input: ClerkIdentityInput) {
+  const runtime = getPlatformRuntime();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const normalizedAuthUserId = input.authUserId.trim();
+
+  const existingUserByAuthId = await runtime.users.getByAuthUserId(normalizedAuthUserId);
+  if (existingUserByAuthId) {
+    await runtime.users.update(existingUserByAuthId.id, {
+      displayName: input.displayName,
+      avatarUrl: input.avatarUrl ?? existingUserByAuthId.avatarUrl ?? null,
+      preferredLocale: input.locale,
+      emailVerifiedAt: input.emailVerified ? new Date().toISOString() : existingUserByAuthId.emailVerifiedAt ?? null,
+      lastAuthSyncAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+      updatedByUserId: existingUserByAuthId.id,
+    });
+
+    return buildViewerForUser(existingUserByAuthId.id);
+  }
+
+  const existingUserByEmail = await runtime.users.getByEmail(normalizedEmail);
+  if (existingUserByEmail) {
+    if (!input.emailVerified || existingUserByEmail.authUserId) {
+      throw new Error('AUTH_ACCOUNT_LINK_CONFLICT');
+    }
+
+    await runtime.users.update(existingUserByEmail.id, {
+      authProvider: 'clerk',
+      authUserId: normalizedAuthUserId,
+      displayName: input.displayName,
+      avatarUrl: input.avatarUrl ?? existingUserByEmail.avatarUrl ?? null,
+      preferredLocale: input.locale,
+      emailVerifiedAt: new Date().toISOString(),
+      lastAuthSyncAt: new Date().toISOString(),
+      lastLoginAt: new Date().toISOString(),
+      updatedByUserId: existingUserByEmail.id,
+    });
+
+    return buildViewerForUser(existingUserByEmail.id);
+  }
+
+  return provisionViewerFromClerk(input);
+}
+
 export async function authenticateUser(input: AuthenticateInput): Promise<AppSession> {
   const runtime = getPlatformRuntime();
   const normalizedEmail = input.email.trim().toLowerCase();
@@ -164,6 +217,124 @@ export async function getCurrentViewer() {
     subscription,
     creditAccount,
   };
+}
+
+export async function buildViewerForUser(userId: string) {
+  const runtime = getPlatformRuntime();
+  const user = await runtime.users.getById(userId);
+
+  if (!user) {
+    throw new Error('USER_NOT_FOUND');
+  }
+
+  const organizations = await runtime.organizations.listByOwnerUserId(user.id);
+  const organization =
+    organizations.find((candidate) => candidate.id === user.defaultOrganizationId) ?? organizations[0] ?? null;
+
+  if (!organization) {
+    throw new Error('MISSING_ORGANIZATION');
+  }
+
+  const workspaces = await runtime.workspaces.listByOrganizationId(organization.id);
+  const workspace = workspaces[0] ?? null;
+
+  if (!workspace) {
+    throw new Error('MISSING_WORKSPACE');
+  }
+
+  const [subscription, creditAccount] = await Promise.all([
+    runtime.subscriptions.getCurrentByOrganizationId(organization.id),
+    runtime.creditAccounts.getByOrganizationId(organization.id),
+  ]);
+
+  return {
+    user,
+    organization,
+    workspace,
+    subscription,
+    creditAccount,
+  };
+}
+
+async function provisionViewerFromClerk(input: ClerkIdentityInput) {
+  const runtime = getPlatformRuntime();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  const displayName = input.displayName.trim() || normalizedEmail.split('@')[0] || 'Creator';
+  const billingPreferences = getInitialBillingPreferences(input.locale);
+  const now = new Date().toISOString();
+
+  const user = await runtime.users.create({
+    email: normalizedEmail,
+    displayName,
+    authProvider: 'clerk',
+    authUserId: input.authUserId.trim(),
+    avatarUrl: input.avatarUrl ?? null,
+    preferredLocale: input.locale,
+    status: 'active',
+    emailVerifiedAt: input.emailVerified ? now : null,
+    lastAuthSyncAt: now,
+  });
+
+  const organization = await runtime.organizations.create({
+    slug: await uniqueSlug('org', displayName),
+    name: `${displayName}'s Studio`,
+    ownerUserId: user.id,
+    billingLocale: billingPreferences.locale,
+    billingCurrency: billingPreferences.currency,
+    pricingRegion: billingPreferences.pricingRegion,
+    createdByUserId: user.id,
+  });
+
+  const workspace = await runtime.workspaces.create({
+    organizationId: organization.id,
+    slug: 'main',
+    name: input.locale === 'en-US' ? 'Main Project Space' : '默认项目空间',
+    defaultLocale: input.locale,
+    createdByUserId: user.id,
+  });
+
+  await runtime.users.update(user.id, {
+    defaultOrganizationId: organization.id,
+    lastLoginAt: now,
+    lastAuthSyncAt: now,
+    updatedByUserId: user.id,
+  });
+
+  const freePlan = getPlanCatalogEntry('free');
+  await runtime.subscriptions.create({
+    organizationId: organization.id,
+    provider: 'internal',
+    planKey: freePlan.key,
+    status: 'active',
+    billingInterval: freePlan.billingInterval,
+    entitlements: freePlan.entitlements,
+    priceCents: freePlan.prices.USD.amountCents,
+    currency: 'USD',
+    currentPeriodStart: now,
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    createdByUserId: user.id,
+  });
+
+  const creditAccount = await runtime.creditAccounts.create({
+    organizationId: organization.id,
+    availableCredits: freePlan.monthlyCredits,
+    reservedCredits: 0,
+    grantedCreditsTotal: freePlan.monthlyCredits,
+    consumedCreditsTotal: 0,
+    createdByUserId: user.id,
+  });
+
+  await runtime.creditLedger.append({
+    organizationId: organization.id,
+    creditAccountId: creditAccount.id,
+    kind: 'subscription_grant',
+    deltaCredits: freePlan.monthlyCredits,
+    balanceAfter: freePlan.monthlyCredits,
+    note: 'Initial free credits',
+    createdByUserId: user.id,
+  });
+
+  return buildViewerForUser(user.id);
 }
 
 async function uniqueSlug(prefix: string, base: string): Promise<string> {

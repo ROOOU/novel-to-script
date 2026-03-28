@@ -49,6 +49,7 @@ import type {
 export interface UserRepository {
   getById(id: string): Promise<User | null>;
   getByEmail(email: string): Promise<User | null>;
+  getByAuthUserId(authUserId: string): Promise<User | null>;
   listByIds(ids: string[]): Promise<User[]>;
   create(input: CreateUserInput): Promise<User>;
   update(id: string, input: UpdateUserInput): Promise<User>;

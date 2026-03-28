@@ -104,11 +104,15 @@ export interface User extends AuditFields {
   id: EntityId;
   email: string;
   displayName: string;
+  authProvider?: 'clerk' | null;
+  authUserId?: string | null;
   passwordHash?: string | null;
   avatarUrl?: string | null;
   preferredLocale?: SupportedLocale;
   defaultOrganizationId?: EntityId | null;
   status: UserStatus;
+  emailVerifiedAt?: Timestamp | null;
+  lastAuthSyncAt?: Timestamp | null;
   lastLoginAt?: Timestamp | null;
 }
 
@@ -354,21 +358,29 @@ export interface RedeemCodeRedemption extends AuditFields {
 export interface CreateUserInput {
   email: string;
   displayName: string;
+  authProvider?: 'clerk' | null;
+  authUserId?: string | null;
   passwordHash?: string | null;
   avatarUrl?: string | null;
   preferredLocale?: SupportedLocale;
   defaultOrganizationId?: EntityId | null;
   status?: UserStatus;
+  emailVerifiedAt?: Timestamp | null;
+  lastAuthSyncAt?: Timestamp | null;
   createdByUserId?: EntityId | null;
 }
 
 export interface UpdateUserInput {
   displayName?: string;
+  authProvider?: 'clerk' | null;
+  authUserId?: string | null;
   passwordHash?: string | null;
   avatarUrl?: string | null;
   preferredLocale?: SupportedLocale;
   defaultOrganizationId?: EntityId | null;
   status?: UserStatus;
+  emailVerifiedAt?: Timestamp | null;
+  lastAuthSyncAt?: Timestamp | null;
   lastLoginAt?: Timestamp | null;
   updatedByUserId?: EntityId | null;
 }
