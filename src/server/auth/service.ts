@@ -4,7 +4,7 @@ import { getInitialBillingPreferences, getPlanCatalogEntry } from '@/server/bill
 import { getPlatformRuntime } from '@/server/shared/platform';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 import type { AppSession } from './session';
-import { getCurrentSession } from './session';
+import { getCurrentClerkIdentity, getCurrentSession } from './session';
 
 export interface AuthenticateInput {
   email: string;
@@ -191,6 +191,11 @@ export async function authenticateUser(input: AuthenticateInput): Promise<AppSes
 }
 
 export async function getCurrentViewer() {
+  const clerkIdentity = await getCurrentClerkIdentity();
+  if (clerkIdentity) {
+    return syncViewerFromClerkIdentity(clerkIdentity);
+  }
+
   const session = await getCurrentSession();
   if (!session) {
     return null;

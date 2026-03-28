@@ -2,7 +2,6 @@ import type {
   PlatformRequestIdentity,
   PlatformRequestLike,
 } from './types';
-import { parseSessionFromCookieHeader } from '@/server/auth/session';
 
 const REQUEST_ID_HEADER_CANDIDATES = [
   'x-request-id',
@@ -35,14 +34,9 @@ export function createPlatformRequestIdentity(
 }
 
 export function resolveActorIdentity(request: PlatformRequestLike) {
-  const session = parseSessionFromCookieHeader(request.headers.get('cookie'));
-
   return {
-    userId: resolveHeaderValue(request, USER_ID_HEADER_CANDIDATES) ?? session?.userId ?? null,
-    sessionId:
-      resolveHeaderValue(request, SESSION_ID_HEADER_CANDIDATES) ??
-      (session ? `${session.userId}:${session.organizationId}` : null) ??
-      null,
+    userId: resolveHeaderValue(request, USER_ID_HEADER_CANDIDATES) ?? null,
+    sessionId: resolveHeaderValue(request, SESSION_ID_HEADER_CANDIDATES) ?? null,
   };
 }
 

@@ -3,7 +3,6 @@ import type {
   PlatformWorkspaceRef,
   PlatformWorkspaceSource,
 } from './types';
-import { parseSessionFromCookieHeader } from '@/server/auth/session';
 
 const WORKSPACE_ID_HEADERS = ['x-workspace-id', 'x-tenant-id', 'x-org-id'] as const;
 const ORGANIZATION_ID_HEADERS = ['x-organization-id', 'x-org-id'] as const;
@@ -24,14 +23,13 @@ export function resolveWorkspaceContext(
   options: WorkspaceResolutionOptions = {}
 ): PlatformWorkspaceRef {
   const query = request.nextUrl?.searchParams ?? null;
-  const session = parseSessionFromCookieHeader(request.headers.get('cookie'));
 
   const workspaceId = resolveScopedIdentifier(
     request,
     query,
     WORKSPACE_ID_HEADERS,
     WORKSPACE_ID_QUERY_KEYS,
-    options.defaultWorkspaceId ?? session?.workspaceId ?? null
+    options.defaultWorkspaceId ?? null
   );
 
   const organizationId =
@@ -40,7 +38,7 @@ export function resolveWorkspaceContext(
       query,
       ORGANIZATION_ID_HEADERS,
       ORGANIZATION_ID_QUERY_KEYS,
-      options.defaultOrganizationId ?? session?.organizationId ?? null
+      options.defaultOrganizationId ?? null
     ) ?? workspaceId;
 
   const projectId = resolveScopedIdentifier(
@@ -55,7 +53,7 @@ export function resolveWorkspaceContext(
     workspaceId,
     organizationId,
     projectId,
-    source: detectWorkspaceSource(request, query, session !== null, workspaceId, organizationId, projectId),
+    source: detectWorkspaceSource(request, query, workspaceId, organizationId, projectId),
   };
 }
 
@@ -88,7 +86,6 @@ function resolveScopedIdentifier(
 function detectWorkspaceSource(
   request: PlatformRequestLike,
   query: URLSearchParams | null,
-  hasSession: boolean,
   workspaceId: string | null,
   organizationId: string | null,
   projectId: string | null
@@ -99,10 +96,6 @@ function detectWorkspaceSource(
 
   if (hasQueryValue(query, WORKSPACE_ID_QUERY_KEYS, ORGANIZATION_ID_QUERY_KEYS, PROJECT_ID_QUERY_KEYS)) {
     return 'query';
-  }
-
-  if (hasSession && (workspaceId || organizationId)) {
-    return 'session';
   }
 
   if (workspaceId || organizationId || projectId) {
