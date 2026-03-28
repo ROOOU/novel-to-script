@@ -13,24 +13,31 @@ export interface ClerkIdentityInput {
   locale: SupportedLocale;
 }
 
+const activeSyncs = new Map<string, Promise<Awaited<ReturnType<typeof buildViewerForUser>>>>();
+
 export async function syncViewerFromClerkIdentity(input: ClerkIdentityInput) {
+  const normalizedAuthUserId = input.authUserId.trim();
+  const existingSync = activeSyncs.get(normalizedAuthUserId);
+  if (existingSync) {
+    return existingSync;
+  }
+
+  const sync = syncViewerFromClerkIdentityUnlocked(input).finally(() => {
+    activeSyncs.delete(normalizedAuthUserId);
+  });
+
+  activeSyncs.set(normalizedAuthUserId, sync);
+  return sync;
+}
+
+async function syncViewerFromClerkIdentityUnlocked(input: ClerkIdentityInput) {
   const runtime = getPlatformRuntime();
   const normalizedEmail = input.email.trim().toLowerCase();
   const normalizedAuthUserId = input.authUserId.trim();
 
   const existingUserByAuthId = await runtime.users.getByAuthUserId(normalizedAuthUserId);
   if (existingUserByAuthId) {
-    await runtime.users.update(existingUserByAuthId.id, {
-      displayName: input.displayName,
-      avatarUrl: input.avatarUrl ?? existingUserByAuthId.avatarUrl ?? null,
-      preferredLocale: input.locale,
-      emailVerifiedAt: input.emailVerified ? new Date().toISOString() : existingUserByAuthId.emailVerifiedAt ?? null,
-      lastAuthSyncAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      updatedByUserId: existingUserByAuthId.id,
-    });
-
-    return buildViewerForUser(existingUserByAuthId.id);
+    return finalizeClerkUser(existingUserByAuthId, input);
   }
 
   const existingUserByEmail = await runtime.users.getByEmail(normalizedEmail);
@@ -39,31 +46,23 @@ export async function syncViewerFromClerkIdentity(input: ClerkIdentityInput) {
       throw new Error('AUTH_ACCOUNT_LINK_CONFLICT');
     }
 
-    await runtime.users.update(existingUserByEmail.id, {
-      authProvider: 'clerk',
-      authUserId: normalizedAuthUserId,
-      displayName: input.displayName,
-      avatarUrl: input.avatarUrl ?? existingUserByEmail.avatarUrl ?? null,
-      preferredLocale: input.locale,
-      emailVerifiedAt: new Date().toISOString(),
-      lastAuthSyncAt: new Date().toISOString(),
-      lastLoginAt: new Date().toISOString(),
-      updatedByUserId: existingUserByEmail.id,
-    });
-
-    return buildViewerForUser(existingUserByEmail.id);
+    return finalizeClerkUser(existingUserByEmail, input);
   }
 
-  return provisionViewerFromClerk(input);
+  return finalizeClerkUser(await createClerkPlaceholderUser(input), input);
 }
 
 export async function getCurrentViewer() {
-  const clerkIdentity = await getCurrentClerkIdentity();
-  if (!clerkIdentity) {
+  try {
+    const clerkIdentity = await getCurrentClerkIdentity();
+    if (!clerkIdentity) {
+      return null;
+    }
+
+    return await syncViewerFromClerkIdentity(clerkIdentity);
+  } catch {
     return null;
   }
-
-  return syncViewerFromClerkIdentity(clerkIdentity);
 }
 
 export async function buildViewerForUser(userId: string) {
@@ -74,25 +73,7 @@ export async function buildViewerForUser(userId: string) {
     throw new Error('USER_NOT_FOUND');
   }
 
-  const organizations = await runtime.organizations.listByOwnerUserId(user.id);
-  const organization =
-    organizations.find((candidate) => candidate.id === user.defaultOrganizationId) ?? organizations[0] ?? null;
-
-  if (!organization) {
-    throw new Error('MISSING_ORGANIZATION');
-  }
-
-  const workspaces = await runtime.workspaces.listByOrganizationId(organization.id);
-  const workspace = workspaces[0] ?? null;
-
-  if (!workspace) {
-    throw new Error('MISSING_WORKSPACE');
-  }
-
-  const [subscription, creditAccount] = await Promise.all([
-    runtime.subscriptions.getCurrentByOrganizationId(organization.id),
-    runtime.creditAccounts.getByOrganizationId(organization.id),
-  ]);
+  const { organization, workspace, subscription, creditAccount } = await ensureViewerReady(runtime, user);
 
   const locale = user.preferredLocale ?? workspace.defaultLocale ?? 'zh-CN';
 
@@ -114,85 +95,151 @@ export async function buildViewerForUser(userId: string) {
   };
 }
 
-async function provisionViewerFromClerk(input: ClerkIdentityInput) {
+async function finalizeClerkUser(user: Awaited<ReturnType<typeof createClerkPlaceholderUser>>, input: ClerkIdentityInput) {
   const runtime = getPlatformRuntime();
   const normalizedEmail = input.email.trim().toLowerCase();
   const displayName = input.displayName.trim() || normalizedEmail.split('@')[0] || 'Creator';
-  const billingPreferences = getInitialBillingPreferences(input.locale);
   const now = new Date().toISOString();
-
-  const user = await runtime.users.create({
-    email: normalizedEmail,
-    displayName,
-    authProvider: 'clerk',
-    authUserId: input.authUserId.trim(),
-    avatarUrl: input.avatarUrl ?? null,
-    preferredLocale: input.locale,
-    status: 'active',
-    emailVerifiedAt: input.emailVerified ? now : null,
-    lastAuthSyncAt: now,
-  });
-
-  const organization = await runtime.organizations.create({
-    slug: await uniqueSlug('org', displayName),
-    name: `${displayName}'s Studio`,
-    ownerUserId: user.id,
-    billingLocale: billingPreferences.locale,
-    billingCurrency: billingPreferences.currency,
-    pricingRegion: billingPreferences.pricingRegion,
-    createdByUserId: user.id,
-  });
-
-  const workspace = await runtime.workspaces.create({
-    organizationId: organization.id,
-    slug: 'main',
-    name: input.locale === 'en-US' ? 'Main Project Space' : '默认项目空间',
-    defaultLocale: input.locale,
-    createdByUserId: user.id,
-  });
+  const { organization } = await ensureViewerReady(runtime, user, input, displayName);
 
   await runtime.users.update(user.id, {
     defaultOrganizationId: organization.id,
-    lastLoginAt: now,
+    authProvider: 'clerk',
+    authUserId: input.authUserId.trim(),
+    displayName,
+    avatarUrl: input.avatarUrl ?? user.avatarUrl ?? null,
+    preferredLocale: input.locale,
+    emailVerifiedAt: input.emailVerified ? now : user.emailVerifiedAt ?? null,
     lastAuthSyncAt: now,
+    lastLoginAt: now,
     updatedByUserId: user.id,
   });
 
-  const freePlan = getPlanCatalogEntry('free');
-  await runtime.subscriptions.create({
-    organizationId: organization.id,
-    provider: 'internal',
-    planKey: freePlan.key,
-    status: 'active',
-    billingInterval: freePlan.billingInterval,
-    entitlements: freePlan.entitlements,
-    priceCents: freePlan.prices.USD.amountCents,
-    currency: 'USD',
-    currentPeriodStart: now,
-    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-    createdByUserId: user.id,
-  });
-
-  const creditAccount = await runtime.creditAccounts.create({
-    organizationId: organization.id,
-    availableCredits: freePlan.monthlyCredits,
-    reservedCredits: 0,
-    grantedCreditsTotal: freePlan.monthlyCredits,
-    consumedCreditsTotal: 0,
-    createdByUserId: user.id,
-  });
-
-  await runtime.creditLedger.append({
-    organizationId: organization.id,
-    creditAccountId: creditAccount.id,
-    kind: 'subscription_grant',
-    deltaCredits: freePlan.monthlyCredits,
-    balanceAfter: freePlan.monthlyCredits,
-    note: 'Initial free credits',
-    createdByUserId: user.id,
-  });
-
   return buildViewerForUser(user.id);
+}
+
+async function ensureViewerReady(
+  runtime: ReturnType<typeof getPlatformRuntime>,
+  user: Awaited<ReturnType<typeof createClerkPlaceholderUser>>,
+  input?: ClerkIdentityInput,
+  displayName?: string
+) {
+  const canRepairClerkManagedUser = Boolean(input || user.authProvider === 'clerk' || user.authUserId);
+  const effectiveLocale = input?.locale ?? user.preferredLocale ?? 'zh-CN';
+  const billingPreferences = canRepairClerkManagedUser ? getInitialBillingPreferences(effectiveLocale) : null;
+  const resolvedDisplayName = displayName?.trim() || user.displayName.trim() || user.email.split('@')[0] || 'Creator';
+
+  const organizations = await runtime.organizations.listByOwnerUserId(user.id);
+  let organization = organizations.find((candidate) => candidate.id === user.defaultOrganizationId) ?? organizations[0] ?? null;
+
+  if (!organization) {
+    if (!billingPreferences) {
+      throw new Error('MISSING_ORGANIZATION');
+    }
+
+    organization = await runtime.organizations.create({
+      slug: await uniqueSlug('org', resolvedDisplayName),
+      name: `${resolvedDisplayName}'s Studio`,
+      ownerUserId: user.id,
+      billingLocale: billingPreferences.locale,
+      billingCurrency: billingPreferences.currency,
+      pricingRegion: billingPreferences.pricingRegion,
+      createdByUserId: user.id,
+    });
+  }
+
+  const workspaces = await runtime.workspaces.listByOrganizationId(organization.id);
+  let workspace = workspaces[0] ?? null;
+
+  if (!workspace) {
+    if (!canRepairClerkManagedUser) {
+      throw new Error('MISSING_WORKSPACE');
+    }
+
+    workspace = await runtime.workspaces.create({
+      organizationId: organization.id,
+      slug: 'main',
+      name: effectiveLocale === 'en-US' ? 'Main Project Space' : '默认项目空间',
+      defaultLocale: effectiveLocale,
+      createdByUserId: user.id,
+    });
+  }
+
+  let subscription = await runtime.subscriptions.getCurrentByOrganizationId(organization.id);
+  if (!subscription) {
+    if (!billingPreferences) {
+      subscription = null;
+    } else {
+      const freePlan = getPlanCatalogEntry('free');
+      subscription = await runtime.subscriptions.create({
+        organizationId: organization.id,
+        provider: 'internal',
+        planKey: freePlan.key,
+        status: 'active',
+        billingInterval: freePlan.billingInterval,
+        entitlements: freePlan.entitlements,
+        priceCents: freePlan.prices.USD.amountCents,
+        currency: 'USD',
+        currentPeriodStart: new Date().toISOString(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        createdByUserId: user.id,
+      });
+    }
+  }
+
+  let creditAccount = await runtime.creditAccounts.getByOrganizationId(organization.id);
+  if (!creditAccount) {
+    if (!billingPreferences) {
+      creditAccount = null;
+    } else {
+      const freePlan = getPlanCatalogEntry('free');
+      creditAccount = await runtime.creditAccounts.create({
+        organizationId: organization.id,
+        availableCredits: freePlan.monthlyCredits,
+        reservedCredits: 0,
+        grantedCreditsTotal: freePlan.monthlyCredits,
+        consumedCreditsTotal: 0,
+        createdByUserId: user.id,
+      });
+
+      await runtime.creditLedger.append({
+        organizationId: organization.id,
+        creditAccountId: creditAccount.id,
+        kind: 'subscription_grant',
+        deltaCredits: freePlan.monthlyCredits,
+        balanceAfter: freePlan.monthlyCredits,
+        note: 'Initial free credits',
+        createdByUserId: user.id,
+      });
+    }
+  }
+
+  return {
+    organization,
+    workspace,
+    subscription,
+    creditAccount,
+  };
+}
+
+async function createClerkPlaceholderUser(input: ClerkIdentityInput) {
+  const runtime = getPlatformRuntime();
+  return runtime.users.create({
+    email: input.email.trim().toLowerCase(),
+    displayName: resolveClerkDisplayName(input, input.email),
+    authProvider: 'clerk',
+    authUserId: null,
+    avatarUrl: input.avatarUrl ?? null,
+    preferredLocale: input.locale,
+    status: 'active',
+    emailVerifiedAt: input.emailVerified ? new Date().toISOString() : null,
+    lastAuthSyncAt: new Date().toISOString(),
+  });
+}
+
+function resolveClerkDisplayName(input: ClerkIdentityInput, fallbackEmail: string): string {
+  const normalizedEmail = fallbackEmail.trim().toLowerCase();
+  return input.displayName.trim() || normalizedEmail.split('@')[0] || 'Creator';
 }
 
 async function uniqueSlug(prefix: string, base: string): Promise<string> {
