@@ -1,3 +1,4 @@
+import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import {
@@ -8,12 +9,27 @@ import {
   resolveLocaleFromAcceptLanguage,
 } from '@/i18n/config';
 
-export function proxy(request: NextRequest) {
+const isProtectedRoute = createRouteMatcher([
+  '/:locale/projects(.*)',
+  '/:locale/billing(.*)',
+  '/api/projects(.*)',
+  '/api/billing(.*)',
+]);
+
+export default clerkMiddleware(async (auth, request: NextRequest) => {
+  if (isProtectedRoute(request)) {
+    await auth.protect();
+  }
+
   const { pathname } = request.nextUrl;
 
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
+    pathname === '/sign-in' ||
+    pathname.startsWith('/sign-in/') ||
+    pathname === '/sign-up' ||
+    pathname.startsWith('/sign-up/') ||
     pathname.includes('.') ||
     pathname === '/favicon.ico'
   ) {
@@ -41,8 +57,11 @@ export function proxy(request: NextRequest) {
   const url = request.nextUrl.clone();
   url.pathname = buildLocalizedPath(locale, pathname);
   return NextResponse.redirect(url);
-}
+});
 
 export const config = {
-  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    '/(api|trpc)(.*)',
+  ],
 };
