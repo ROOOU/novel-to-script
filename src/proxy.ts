@@ -16,8 +16,36 @@ const isProtectedRoute = createRouteMatcher([
   '/api/billing(.*)',
 ]);
 
+const isProtectedApiRoute = createRouteMatcher([
+  '/api/projects(.*)',
+  '/api/billing(.*)',
+]);
+
+const isProtectedPageRoute = createRouteMatcher([
+  '/:locale/projects(.*)',
+  '/:locale/billing(.*)',
+]);
+
 export default clerkMiddleware(async (auth, request: NextRequest) => {
-  if (isProtectedRoute(request)) {
+  if (isProtectedApiRoute(request)) {
+    const authState = await auth();
+    if (!authState.userId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: 'UNAUTHORIZED',
+        },
+        { status: 401 }
+      );
+    }
+  } else if (isProtectedPageRoute(request)) {
+    const authState = await auth();
+    if (!authState.userId) {
+      const locale = resolveRequestLocale(request);
+      const signInUrl = new URL(`/${locale}/login`, request.url);
+      return NextResponse.redirect(signInUrl);
+    }
+  } else if (isProtectedRoute(request)) {
     await auth.protect();
   }
 
@@ -58,6 +86,18 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
   url.pathname = buildLocalizedPath(locale, pathname);
   return NextResponse.redirect(url);
 });
+
+function resolveRequestLocale(request: NextRequest) {
+  const explicitLocale = request.nextUrl.pathname.split('/').filter(Boolean)[0];
+  if (isSupportedLocale(explicitLocale)) {
+    return explicitLocale;
+  }
+
+  const cookieLocale = request.cookies.get(LOCALE_COOKIE_NAME)?.value;
+  return isSupportedLocale(cookieLocale)
+    ? cookieLocale
+    : resolveLocaleFromAcceptLanguage(request.headers.get('accept-language')) || DEFAULT_LOCALE;
+}
 
 export const config = {
   matcher: [
