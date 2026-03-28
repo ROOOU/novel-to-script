@@ -8,6 +8,13 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 API Key、Base URL、模型名现在统一放在后端环境变量中，前端页面不再提供填写入口，也不会把这些信息存到浏览器。
 
+认证现在使用 Clerk。开发环境至少需要配置：
+
+```bash
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+```
+
 在项目根目录创建 `.env.local`：
 
 ```bash
@@ -24,6 +31,8 @@ MODEL_NAME=gpt-4o
 API_KEY=sk-...
 API_BASE_URL=https://api.openai.com/v1
 ```
+
+支付仍然使用 PayPal，相关变量示例见 `.env.local.example`。
 
 ## Getting Started
 
