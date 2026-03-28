@@ -1,5 +1,6 @@
 'use client';
 
+import { useClerk } from '@clerk/nextjs';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -38,6 +39,7 @@ export function AppShellHeader({
 }: AppShellHeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
+  const { signOut } = useClerk();
   const [availableCredits, setAvailableCredits] = useState<number | null>(initialCredits ?? null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const userInitials = getInitials(userDisplayName);
@@ -90,9 +92,9 @@ export function AppShellHeader({
   }, [initialCredits, signedIn]);
 
   async function handleSignOut() {
-    await fetch('/api/auth/session', { method: 'DELETE' });
-    router.push(`/${locale}`);
-    router.refresh();
+    await signOut({
+      redirectUrl: `/${locale}`,
+    });
   }
 
   return (
@@ -150,7 +152,7 @@ export function AppShellHeader({
               <Link href={`/${locale}/login`} className="secondary-button ghost-button">
                 {labels.signIn}
               </Link>
-              <Link href={`/${locale}/login`} className="primary-button">
+              <Link href="/sign-up" className="primary-button">
                 {labels.signUp}
               </Link>
             </div>
