@@ -30,6 +30,7 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
   if (isProtectedApiRoute(request)) {
     const authState = await auth();
     if (!authState.userId) {
+      logAuthDebug('api_unauthorized', request);
       return NextResponse.json(
         {
           ok: false,
@@ -41,6 +42,7 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
   } else if (isProtectedPageRoute(request)) {
     const authState = await auth();
     if (!authState.userId) {
+      logAuthDebug('page_unauthorized', request);
       const locale = resolveRequestLocale(request);
       const signInUrl = new URL(`/${locale}/login`, request.url);
       return NextResponse.redirect(signInUrl);
@@ -98,6 +100,22 @@ function resolveRequestLocale(request: NextRequest) {
   return isSupportedLocale(cookieLocale)
     ? cookieLocale
     : resolveLocaleFromAcceptLanguage(request.headers.get('accept-language')) || DEFAULT_LOCALE;
+}
+
+function logAuthDebug(reason: 'api_unauthorized' | 'page_unauthorized', request: NextRequest) {
+  if (!request.nextUrl.pathname.startsWith('/api/billing') && !request.nextUrl.pathname.includes('/projects')) {
+    return;
+  }
+
+  const cookieNames = request.cookies.getAll().map((cookie) => cookie.name);
+  console.info('[auth-debug]', {
+    reason,
+    host: request.nextUrl.host,
+    pathname: request.nextUrl.pathname,
+    hasSessionCookie: cookieNames.includes('__session'),
+    hasClientUatCookie: cookieNames.includes('__client_uat'),
+    clerkCookies: cookieNames.filter((name) => name.startsWith('__clerk') || name.startsWith('__client')),
+  });
 }
 
 export const config = {
