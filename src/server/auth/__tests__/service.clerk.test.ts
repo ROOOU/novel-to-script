@@ -395,6 +395,55 @@ describe('Clerk auth sync', () => {
     expect(runtime.workspaces.create).toHaveBeenCalledTimes(1);
   });
 
+  it('recovers when placeholder user creation loses a race on the unique email constraint', async () => {
+    const racedUser = {
+      id: 'user_race_1',
+      email: 'creator@example.com',
+      displayName: 'Creator',
+      authProvider: 'clerk',
+      authUserId: null,
+      avatarUrl: null,
+      preferredLocale: 'en-US',
+      defaultOrganizationId: null,
+      status: 'active',
+      emailVerifiedAt: now,
+      lastAuthSyncAt: now,
+      lastLoginAt: null,
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId: null,
+      updatedByUserId: null,
+    };
+
+    runtime.users.create.mockImplementationOnce(async () => {
+      store.user = racedUser;
+      throw new Error('duplicate key value violates unique constraint "users_email_idx"');
+    });
+
+    const { syncViewerFromClerkIdentity } = await import('@/server/auth/service');
+
+    await expect(
+      syncViewerFromClerkIdentity({
+        authUserId: 'clerk_user_1',
+        email: 'creator@example.com',
+        emailVerified: true,
+        displayName: 'Creator',
+        locale: 'en-US',
+      })
+    ).resolves.toMatchObject({
+      user: expect.objectContaining({
+        id: 'user_race_1',
+        authUserId: 'clerk_user_1',
+      }),
+      organization: expect.objectContaining({
+        id: 'org_1',
+      }),
+      workspace: expect.objectContaining({
+        id: 'ws_1',
+      }),
+    });
+  });
+
   it('links a verified legacy user by email without recreating tenancy', async () => {
     store.user = {
       id: 'user_legacy_1',

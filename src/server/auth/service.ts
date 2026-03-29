@@ -37,7 +37,7 @@ async function syncViewerFromClerkIdentityUnlocked(input: ClerkIdentityInput) {
 
   const existingUserByAuthId = await runtime.users.getByAuthUserId(normalizedAuthUserId);
   if (existingUserByAuthId) {
-    return finalizeClerkUser(existingUserByAuthId, input);
+    return finalizeOrRecoverClerkUser(existingUserByAuthId, input);
   }
 
   const existingUserByEmail = await runtime.users.getByEmail(normalizedEmail);
@@ -46,10 +46,19 @@ async function syncViewerFromClerkIdentityUnlocked(input: ClerkIdentityInput) {
       throw new Error('AUTH_ACCOUNT_LINK_CONFLICT');
     }
 
-    return finalizeClerkUser(existingUserByEmail, input);
+    return finalizeOrRecoverClerkUser(existingUserByEmail, input);
   }
 
-  return finalizeClerkUser(await createClerkPlaceholderUser(input), input);
+  try {
+    return await finalizeClerkUser(await createClerkPlaceholderUser(input), input);
+  } catch (error) {
+    const recoveredViewer = await recoverViewerFromConcurrentIdentityWrite(input, error);
+    if (recoveredViewer) {
+      return recoveredViewer;
+    }
+
+    throw error;
+  }
 }
 
 export async function getCurrentViewer() {
@@ -116,6 +125,61 @@ async function finalizeClerkUser(user: Awaited<ReturnType<typeof createClerkPlac
   });
 
   return buildViewerForUser(user.id);
+}
+
+async function finalizeOrRecoverClerkUser(
+  user: Awaited<ReturnType<typeof createClerkPlaceholderUser>>,
+  input: ClerkIdentityInput
+) {
+  try {
+    return await finalizeClerkUser(user, input);
+  } catch (error) {
+    const recoveredViewer = await recoverViewerFromConcurrentIdentityWrite(input, error);
+    if (recoveredViewer) {
+      return recoveredViewer;
+    }
+
+    throw error;
+  }
+}
+
+async function recoverViewerFromConcurrentIdentityWrite(input: ClerkIdentityInput, error: unknown) {
+  if (!isLikelyUserIdentityConstraintError(error)) {
+    return null;
+  }
+
+  const runtime = getPlatformRuntime();
+  const normalizedAuthUserId = input.authUserId.trim();
+  const normalizedEmail = input.email.trim().toLowerCase();
+
+  const userByAuthId = await runtime.users.getByAuthUserId(normalizedAuthUserId);
+  if (userByAuthId) {
+    return buildViewerForUser(userByAuthId.id);
+  }
+
+  const userByEmail = await runtime.users.getByEmail(normalizedEmail);
+  if (!userByEmail) {
+    return null;
+  }
+
+  if (userByEmail.authUserId && userByEmail.authUserId !== normalizedAuthUserId) {
+    throw new Error('AUTH_ACCOUNT_LINK_CONFLICT');
+  }
+
+  return finalizeClerkUser(userByEmail, input);
+}
+
+function isLikelyUserIdentityConstraintError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('unique constraint') ||
+    message.includes('duplicate key') ||
+    message.includes('already exists')
+  );
 }
 
 async function ensureViewerReady(
