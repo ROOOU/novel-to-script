@@ -1,7 +1,7 @@
 'use client';
 
-import { useClerk } from '@clerk/nextjs';
-import { useEffect, useState } from 'react';
+import { useClerk, useUser } from '@clerk/nextjs';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { NavLinks } from '@/app/nav-links';
@@ -40,12 +40,39 @@ export function AppShellHeader({
   const pathname = usePathname();
   const router = useRouter();
   const { signOut } = useClerk();
+  const { isLoaded: isUserLoaded, isSignedIn: clerkSignedIn, user: clerkUser } = useUser();
   const [availableCredits, setAvailableCredits] = useState<number | null>(initialCredits ?? null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
-  const userInitials = getInitials(userDisplayName);
+  const hasRefreshedForClientAuth = useRef(false);
+  const effectiveSignedIn = signedIn || Boolean(isUserLoaded && clerkSignedIn);
+  const effectiveDisplayName =
+    userDisplayName ||
+    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(' ') ||
+    clerkUser?.username ||
+    clerkUser?.primaryEmailAddress?.emailAddress?.split('@')[0] ||
+    null;
+  const userInitials = getInitials(effectiveDisplayName);
 
   useEffect(() => {
-    if (!signedIn) {
+    if (!isUserLoaded) {
+      return;
+    }
+
+    if (clerkSignedIn && !signedIn && !hasRefreshedForClientAuth.current) {
+      hasRefreshedForClientAuth.current = true;
+      router.refresh();
+      return;
+    }
+
+    if (!clerkSignedIn || signedIn) {
+      hasRefreshedForClientAuth.current = false;
+    }
+  }, [clerkSignedIn, isUserLoaded, router, signedIn]);
+
+  useEffect(() => {
+    if (!effectiveSignedIn) {
+      setAvailableCredits(initialCredits ?? null);
+      setIsLoadingSummary(false);
       return;
     }
 
@@ -89,7 +116,7 @@ export function AppShellHeader({
       active = false;
       controller.abort();
     };
-  }, [initialCredits, signedIn]);
+  }, [effectiveSignedIn, initialCredits]);
 
   async function handleSignOut() {
     await signOut({
@@ -100,7 +127,7 @@ export function AppShellHeader({
   return (
     <header className="app-header">
       <div className="header-inner">
-        <Link href={signedIn ? `/${locale}/projects` : `/${locale}`} className="logo logo-link">
+        <Link href={effectiveSignedIn ? `/${locale}/projects` : `/${locale}`} className="logo logo-link">
           <div className="logo-lockup">
             <div className="logo-icon">NS</div>
             <div className="logo-copy">
@@ -128,7 +155,7 @@ export function AppShellHeader({
               </Link>
             ))}
           </div>
-          {signedIn ? (
+          {effectiveSignedIn ? (
             <div className="header-account">
               <div className="account-summary" aria-label="Account credits">
                 <span className="account-summary-label">{locale === 'en-US' ? 'Credits' : '积分'}</span>
@@ -139,7 +166,7 @@ export function AppShellHeader({
                   {userInitials}
                 </span>
                 <span className="account-summary-copy">
-                  <strong>{userDisplayName || 'NovelScript'}</strong>
+                  <strong>{effectiveDisplayName || 'NovelScript'}</strong>
                   <span>{locale === 'en-US' ? 'Creator account' : '创作者账号'}</span>
                 </span>
               </div>
@@ -167,8 +194,8 @@ export function AppShellHeader({
               signOut: labels.signOut,
               credits: locale === 'en-US' ? 'credits' : '积分',
             }}
-            signedIn={signedIn}
-            userDisplayName={userDisplayName}
+            signedIn={effectiveSignedIn}
+            userDisplayName={effectiveDisplayName}
             userInitials={userInitials}
             availableCredits={availableCredits}
             onSignOut={handleSignOut}
