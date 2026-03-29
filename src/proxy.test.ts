@@ -32,6 +32,8 @@ vi.mock('@clerk/nextjs/server', () => ({
 describe('proxy', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.resetModules();
+    delete process.env.NEXT_PUBLIC_APP_URL;
   });
 
   it('returns 401 json for unauthenticated protected api routes', async () => {
@@ -78,5 +80,18 @@ describe('proxy', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('location')).toBeNull();
+  });
+
+  it('redirects production requests from vercel.app hosts back to the canonical app domain', async () => {
+    process.env.NEXT_PUBLIC_APP_URL = 'https://app.012294.xyz';
+
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: 'user_1' }),
+      new NextRequest('https://novel-to-script-navv5desw-shengyufeis-projects.vercel.app/zh-CN/pricing?plan=pro')
+    )) as Response;
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://app.012294.xyz/zh-CN/pricing?plan=pro');
   });
 });

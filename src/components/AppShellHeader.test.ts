@@ -37,6 +37,13 @@ vi.mock('@/components/MobileNav', () => ({
 }));
 
 describe('AppShellHeader', () => {
+  it('only loads billing summary when the server confirmed auth state', async () => {
+    const { shouldFetchBillingSummary } = await import('@/components/AppShellHeader');
+
+    expect(shouldFetchBillingSummary(false)).toBe(false);
+    expect(shouldFetchBillingSummary(true)).toBe(true);
+  });
+
   it('shows the signed-in account state when Clerk is signed in on the client', async () => {
     mocks.useUser.mockReturnValue({
       isLoaded: true,

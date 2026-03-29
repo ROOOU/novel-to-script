@@ -64,9 +64,7 @@ export function PricingClient({
 
     if (!response.ok || !result.ok) {
       if (response.status === 401) {
-        startTransition(() => {
-          router.push(`/${locale}/login`);
-        });
+        redirectToCanonicalSignIn(locale);
         return;
       }
 
@@ -172,4 +170,16 @@ function resolvePayPalPurchaseEndpoint(purchaseKind: 'subscription' | 'credit-pa
   return purchaseKind === 'subscription'
     ? '/api/billing/paypal/create-subscription'
     : '/api/billing/paypal/create-order';
+}
+
+function redirectToCanonicalSignIn(locale: SupportedLocale) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const baseUrl = configuredAppUrl || window.location.origin;
+  const redirectTarget = new URL('/sign-in', baseUrl);
+  redirectTarget.searchParams.set('redirect_url', new URL(`/${locale}/pricing`, baseUrl).toString());
+  window.location.assign(redirectTarget.toString());
 }

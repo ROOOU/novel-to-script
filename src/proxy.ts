@@ -27,6 +27,11 @@ const isProtectedPageRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, request: NextRequest) => {
+  const canonicalRedirect = getCanonicalRedirectResponse(request);
+  if (canonicalRedirect) {
+    return canonicalRedirect;
+  }
+
   if (isProtectedApiRoute(request)) {
     const authState = await auth();
     if (!authState.userId) {
@@ -100,6 +105,22 @@ function resolveRequestLocale(request: NextRequest) {
   return isSupportedLocale(cookieLocale)
     ? cookieLocale
     : resolveLocaleFromAcceptLanguage(request.headers.get('accept-language')) || DEFAULT_LOCALE;
+}
+
+function getCanonicalRedirectResponse(request: NextRequest) {
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (!configuredAppUrl) {
+    return null;
+  }
+
+  const canonicalUrl = new URL(configuredAppUrl);
+  const requestHost = request.nextUrl.host;
+  if (!requestHost.endsWith('.vercel.app') || requestHost === canonicalUrl.host) {
+    return null;
+  }
+
+  const redirectUrl = new URL(request.nextUrl.pathname + request.nextUrl.search, canonicalUrl);
+  return NextResponse.redirect(redirectUrl);
 }
 
 function logAuthDebug(reason: 'api_unauthorized' | 'page_unauthorized', request: NextRequest) {

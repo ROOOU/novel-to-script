@@ -52,7 +52,7 @@ export function AppShellHeader({
   const userInitials = getInitials(effectiveDisplayName);
 
   useEffect(() => {
-    if (!effectiveSignedIn) {
+    if (!shouldFetchBillingSummary(signedIn)) {
       setAvailableCredits(initialCredits ?? null);
       setIsLoadingSummary(false);
       return;
@@ -98,7 +98,7 @@ export function AppShellHeader({
       active = false;
       controller.abort();
     };
-  }, [effectiveSignedIn, initialCredits]);
+  }, [signedIn, initialCredits]);
 
   async function handleSignOut() {
     await signOut({
@@ -186,6 +186,10 @@ export function AppShellHeader({
       </div>
     </header>
   );
+}
+
+export function shouldFetchBillingSummary(serverSignedIn: boolean) {
+  return serverSignedIn;
 }
 
 function getInitials(displayName?: string | null) {
