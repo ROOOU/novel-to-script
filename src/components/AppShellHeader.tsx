@@ -1,9 +1,9 @@
 'use client';
 
 import { useClerk, useUser } from '@clerk/nextjs';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { NavLinks } from '@/app/nav-links';
 import { MobileNav } from '@/components/MobileNav';
 import { buildLocalizedPath, SUPPORTED_LOCALES } from '@/i18n/config';
@@ -38,12 +38,10 @@ export function AppShellHeader({
   initialCredits,
 }: AppShellHeaderProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const { signOut } = useClerk();
   const { isLoaded: isUserLoaded, isSignedIn: clerkSignedIn, user: clerkUser } = useUser();
   const [availableCredits, setAvailableCredits] = useState<number | null>(initialCredits ?? null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
-  const hasRefreshedForClientAuth = useRef(false);
   const effectiveSignedIn = signedIn || Boolean(isUserLoaded && clerkSignedIn);
   const effectiveDisplayName =
     userDisplayName ||
@@ -52,22 +50,6 @@ export function AppShellHeader({
     clerkUser?.primaryEmailAddress?.emailAddress?.split('@')[0] ||
     null;
   const userInitials = getInitials(effectiveDisplayName);
-
-  useEffect(() => {
-    if (!isUserLoaded) {
-      return;
-    }
-
-    if (clerkSignedIn && !signedIn && !hasRefreshedForClientAuth.current) {
-      hasRefreshedForClientAuth.current = true;
-      router.refresh();
-      return;
-    }
-
-    if (!clerkSignedIn || signedIn) {
-      hasRefreshedForClientAuth.current = false;
-    }
-  }, [clerkSignedIn, isUserLoaded, router, signedIn]);
 
   useEffect(() => {
     if (!effectiveSignedIn) {
