@@ -105,7 +105,7 @@ export function MobileNav({
             </div>
           ) : (
             <div className="mobile-nav-section mobile-nav-auth">
-              <Link href={`/${locale}/login`} className="secondary-button mobile-nav-action" onClick={() => setIsOpen(false)}>
+              <Link href="/sign-in" className="secondary-button mobile-nav-action" onClick={() => setIsOpen(false)}>
                 {authLabels.signIn}
               </Link>
               <Link href="/sign-up" className="primary-button mobile-nav-action" onClick={() => setIsOpen(false)}>

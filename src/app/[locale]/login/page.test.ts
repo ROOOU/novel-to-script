@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LoginForm } from '@/features/saas/LoginForm';
 
 const mocks = vi.hoisted(() => ({
   redirect: vi.fn(),
@@ -19,18 +18,15 @@ describe('login page', () => {
     vi.clearAllMocks();
   });
 
-  it('renders the login form with the resolved locale only', async () => {
+  it('redirects unauthenticated viewers to the global sign-in route', async () => {
     mocks.getCurrentViewer.mockResolvedValue(null);
 
     const LoginPage = (await import('@/app/[locale]/login/page')).default;
-    const page = await LoginPage({
+    await LoginPage({
       params: Promise.resolve({ locale: 'en-US' }),
     });
 
-    expect(page.type).toBe(LoginForm);
-    expect(page.props).toEqual({
-      locale: 'en-US',
-    });
+    expect(mocks.redirect).toHaveBeenCalledWith('/sign-in');
   });
 
   it('redirects authenticated viewers to their project workspace locale', async () => {
@@ -52,13 +48,10 @@ describe('login page', () => {
     mocks.getCurrentViewer.mockRejectedValue(new Error('CLERK_PRIMARY_EMAIL_MISSING'));
 
     const LoginPage = (await import('@/app/[locale]/login/page')).default;
-    const page = await LoginPage({
+    await LoginPage({
       params: Promise.resolve({ locale: 'en-US' }),
     });
 
-    expect(page.type).toBe(LoginForm);
-    expect(page.props).toEqual({
-      locale: 'en-US',
-    });
+    expect(mocks.redirect).toHaveBeenCalledWith('/sign-in');
   });
 });

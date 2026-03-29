@@ -23,7 +23,8 @@ interface LandingStep {
 export function LandingPage({ locale, dictionary }: LandingPageProps) {
   const isEnglish = locale === 'en-US';
   const primaryHref = `/${locale}/projects`;
-  const loginHref = `/${locale}/login`;
+  const signInHref = '/sign-in';
+  const signUpHref = '/sign-up';
   const pricingHref = `/${locale}/pricing`;
   const primaryAction = isEnglish ? 'Open the studio' : '进入项目中心';
   const secondaryAction = isEnglish ? 'Create an account' : '注册并开始';
@@ -53,7 +54,7 @@ export function LandingPage({ locale, dictionary }: LandingPageProps) {
             <Link href={primaryHref} className="primary-button landing-primary-button">
               {primaryAction}
             </Link>
-            <Link href={loginHref} className="secondary-button landing-secondary-button">
+            <Link href={signUpHref} className="secondary-button landing-secondary-button">
               {secondaryAction}
             </Link>
             <Link href={pricingHref} className="text-link landing-text-link">
@@ -193,11 +194,11 @@ export function LandingPage({ locale, dictionary }: LandingPageProps) {
           <p>{finalBody}</p>
         </div>
         <div className="action-row landing-actions landing-actions-compact">
-          <Link href={primaryHref} className="primary-button">
-            {dictionary.common.projects}
+          <Link href={signInHref} className="primary-button">
+            {dictionary.common.signIn}
           </Link>
-          <Link href={pricingHref} className="secondary-button">
-            {dictionary.common.pricing}
+          <Link href={signUpHref} className="secondary-button">
+            {dictionary.common.signUp}
           </Link>
         </div>
       </section>

@@ -68,4 +68,15 @@ describe('proxy', () => {
 
     expect(response.status).toBe(200);
   });
+
+  it('does not locale-redirect Clerk handshake routes', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/v1/client')
+    )) as Response;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('location')).toBeNull();
+  });
 });

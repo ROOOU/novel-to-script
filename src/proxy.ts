@@ -54,6 +54,7 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
+    pathname.startsWith('/v1') ||
     pathname === '/sign-in' ||
     pathname.startsWith('/sign-in/') ||
     pathname === '/sign-up' ||
