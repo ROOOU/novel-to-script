@@ -180,17 +180,34 @@ export function createSchemaFallbackRuntime<TRuntime extends object>(
 }
 
 function isMissingPlatformSchemaError(error: unknown) {
-  if (!(error instanceof Error)) {
+  return doesErrorDescribeMissingSchema(error) || doesErrorDescribeMissingSchema(getErrorCause(error));
+}
+
+function doesErrorDescribeMissingSchema(error: unknown) {
+  if (!error || typeof error !== 'object') {
     return false;
   }
 
-  const message = error.message.toLowerCase();
+  const code = 'code' in error ? String((error as { code?: unknown }).code ?? '') : '';
+  const message =
+    'message' in error ? String((error as { message?: unknown }).message ?? '').toLowerCase() : '';
+
   return (
+    code === '42P01' ||
+    code === '42703' ||
     message.includes('does not exist') ||
     message.includes('relation') ||
     message.includes('column') ||
     message.includes('no such table')
   );
+}
+
+function getErrorCause(error: unknown) {
+  if (!error || typeof error !== 'object' || !('cause' in error)) {
+    return null;
+  }
+
+  return (error as { cause?: unknown }).cause ?? null;
 }
 
 function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRepository {

@@ -73,4 +73,32 @@ describe('createSchemaFallbackRuntime', () => {
     await expect(runtime.users.getByAuthUserId('clerk_user_1')).rejects.toThrow('ECONNRESET');
     expect(fallback.users.getByAuthUserId).not.toHaveBeenCalled();
   });
+
+  it('treats wrapped postgres missing-relation causes as schema errors', async () => {
+    const primary = {
+      users: {
+        getByAuthUserId: vi.fn().mockRejectedValue(
+          Object.assign(new Error('Failed query: select "data" from "users" where "users"."authUserId" = $1'), {
+            cause: {
+              name: 'PostgresError',
+              code: '42P01',
+              message: 'relation "users" does not exist',
+            },
+          })
+        ),
+      },
+    };
+    const fallback = {
+      users: {
+        getByAuthUserId: vi.fn().mockResolvedValue({ id: 'user_wrapped' }),
+      },
+    };
+
+    const runtime = createSchemaFallbackRuntime(primary, fallback);
+
+    await expect(runtime.users.getByAuthUserId('clerk_user_wrapped')).resolves.toEqual({
+      id: 'user_wrapped',
+    });
+    expect(fallback.users.getByAuthUserId).toHaveBeenCalledTimes(1);
+  });
 });
