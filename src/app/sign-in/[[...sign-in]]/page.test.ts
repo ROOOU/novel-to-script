@@ -20,9 +20,11 @@ describe('sign-in page', () => {
     mocks.headers.mockResolvedValue(new Headers({ 'accept-language': 'zh-CN' }));
   });
 
-  it('uses the resolved locale for deterministic post-auth redirect', async () => {
+  it('uses the resolved locale for deterministic post-auth redirect without forcing an existing session away', async () => {
     const SignInPage = (await import('@/app/sign-in/[[...sign-in]]/page')).default;
-    const page = await SignInPage();
+    const page = await SignInPage({
+      searchParams: Promise.resolve({}),
+    });
 
     expect(page.type).toBe(SignIn);
     expect(page.props).toMatchObject({
@@ -30,7 +32,19 @@ describe('sign-in page', () => {
       path: '/sign-in',
       signUpUrl: '/sign-up',
       fallbackRedirectUrl: '/en-US/projects',
-      forceRedirectUrl: '/en-US/projects',
     });
+    expect(page.props.forceRedirectUrl).toBeUndefined();
+  });
+
+  it('prefers an explicit redirect_url from the request', async () => {
+    const SignInPage = (await import('@/app/sign-in/[[...sign-in]]/page')).default;
+    const page = await SignInPage({
+      searchParams: Promise.resolve({
+        redirect_url: 'https://app.012294.xyz/zh-CN/pricing',
+      }),
+    });
+
+    expect(page.props.fallbackRedirectUrl).toBe('https://app.012294.xyz/zh-CN/pricing');
+    expect(page.props.forceRedirectUrl).toBeUndefined();
   });
 });

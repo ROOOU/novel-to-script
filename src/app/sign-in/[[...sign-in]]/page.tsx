@@ -2,9 +2,14 @@ import { SignIn } from '@clerk/nextjs';
 import { cookies, headers } from 'next/headers';
 import { LOCALE_COOKIE_NAME, isSupportedLocale, resolveLocaleFromAcceptLanguage } from '@/i18n/config';
 
-export default async function SignInPage() {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ redirect_url?: string }>;
+}) {
   const locale = await resolvePreferredLocale();
-  const redirectUrl = `/${locale}/projects`;
+  const params = await searchParams;
+  const redirectUrl = resolveRedirectUrl(params.redirect_url, locale);
 
   return (
     <SignIn
@@ -12,7 +17,6 @@ export default async function SignInPage() {
       path="/sign-in"
       signUpUrl="/sign-up"
       fallbackRedirectUrl={redirectUrl}
-      forceRedirectUrl={redirectUrl}
     />
   );
 }
@@ -26,4 +30,13 @@ async function resolvePreferredLocale() {
 
   const requestHeaders = await headers();
   return resolveLocaleFromAcceptLanguage(requestHeaders.get('accept-language'));
+}
+
+function resolveRedirectUrl(redirectUrl: string | undefined, locale: string) {
+  const normalized = redirectUrl?.trim();
+  if (!normalized) {
+    return `/${locale}/projects`;
+  }
+
+  return normalized;
 }
