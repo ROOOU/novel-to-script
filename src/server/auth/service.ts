@@ -62,14 +62,20 @@ async function syncViewerFromClerkIdentityUnlocked(input: ClerkIdentityInput) {
 }
 
 export async function getCurrentViewer() {
+  let clerkIdentity: ClerkIdentityInput | null = null;
   try {
-    const clerkIdentity = await getCurrentClerkIdentity();
+    clerkIdentity = await getCurrentClerkIdentity();
     if (!clerkIdentity) {
       return null;
     }
 
     return await syncViewerFromClerkIdentity(clerkIdentity);
-  } catch {
+  } catch (error) {
+    console.info('[viewer-sync]', {
+      authUserId: clerkIdentity?.authUserId ?? null,
+      email: clerkIdentity?.email ?? null,
+      error: error instanceof Error ? error.message : 'UNKNOWN_VIEWER_SYNC_ERROR',
+    });
     return null;
   }
 }
