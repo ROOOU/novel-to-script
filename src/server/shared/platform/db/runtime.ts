@@ -65,6 +65,7 @@ import type {
   WorkspaceRepository,
 } from '@/server/shared/platform/repositories';
 import { createEntityId, getNowTimestamp } from '../runtime/file-store';
+import { createPersistentPlatformRuntime } from '../runtime/persistent-runtime';
 import { getDatabaseClient, shouldUseDatabaseRuntime } from './client';
 import {
   creditAccountsTable,
@@ -110,8 +111,7 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
   }
 
   const db = getDatabaseClient();
-
-  return {
+  const primaryRuntime: DatabasePlatformRuntime = {
     users: createUserRepository(db),
     organizations: createOrganizationRepository(db),
     workspaces: createWorkspaceRepository(db),
@@ -129,6 +129,68 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
     redeemCodes: createRedeemCodeRepository(db),
     redeemCodeRedemptions: createRedeemCodeRedemptionRepository(db),
   };
+
+  return createSchemaFallbackRuntime(primaryRuntime, createPersistentPlatformRuntime(), {
+    onFallback(error) {
+      console.warn('[platform-db] falling back to snapshot runtime because normalized tables are unavailable', {
+        error: error instanceof Error ? error.message : 'UNKNOWN_DATABASE_SCHEMA_ERROR',
+      });
+    },
+  });
+}
+
+export function createSchemaFallbackRuntime<TRuntime extends object>(
+  primaryRuntime: TRuntime,
+  fallbackRuntime: TRuntime,
+  options: {
+    onFallback?: (error: unknown) => void;
+  } = {}
+): TRuntime {
+  let fallbackActivated = false;
+
+  return Object.fromEntries(
+    Object.entries(primaryRuntime as Record<string, Record<string, (...args: any[]) => Promise<any>>>).map(([repositoryName, repository]) => {
+      const fallbackRepository = (fallbackRuntime as Record<string, Record<string, (...args: any[]) => Promise<any>>>)[repositoryName];
+      const wrappedRepository = Object.fromEntries(
+        Object.entries(repository).map(([methodName, method]) => [
+          methodName,
+          async (...args: any[]) => {
+            if (fallbackActivated) {
+              return fallbackRepository[methodName](...args);
+            }
+
+            try {
+              return await method.apply(repository, args);
+            } catch (error) {
+              if (!isMissingPlatformSchemaError(error)) {
+                throw error;
+              }
+
+              fallbackActivated = true;
+              options.onFallback?.(error);
+              return fallbackRepository[methodName](...args);
+            }
+          },
+        ])
+      );
+
+      return [repositoryName, wrappedRepository];
+    })
+  ) as TRuntime;
+}
+
+function isMissingPlatformSchemaError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('does not exist') ||
+    message.includes('relation') ||
+    message.includes('column') ||
+    message.includes('no such table')
+  );
 }
 
 function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRepository {
