@@ -8,6 +8,7 @@
     "build": "next build --webpack",
     "prestart": "node scripts/preflight-env.mjs",
     "start": "next start",
+    "smoke:rollout": "node scripts/rollout-smoke.mjs",
     "lint": "eslint",
     "preflight:production": "node scripts/preflight-env.mjs --mode=production",
     "typecheck": "mkdir -p .next/types .next/dev/types && next typegen && tsc --noEmit --incremental false",

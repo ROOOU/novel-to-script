@@ -30,15 +30,24 @@ Release commit:
 - [ ] `GET /api/auth/session` (authenticated)
   - request id:
   - response snippet: blocked (requires production-like authenticated Clerk session)
-- [ ] signed-out redirect checks
+- [x] signed-out redirect checks
   - routes checked:
-  - screenshot links: blocked (manual browser pass pending)
+    - `GET /` -> `307` `location=/zh-CN`
+    - `GET /en-US/projects` -> `307` `location=/en-US/login`
+    - `GET /en-US/billing` -> `307` `location=/en-US/login`
+  - screenshot links: replaced by `smoke:rollout` output (curl/fetch evidence)
 - [ ] signed-in no-loop checks
   - routes checked:
   - screenshot links: blocked (manual browser pass pending)
 - [ ] generation route 401 checks (signed out)
-  - `/api/generate` response: blocked (manual runtime request pending)
-  - `/api/storyboard` response: blocked (manual runtime request pending)
+  - `/api/generate` response: observed `400 {"error":"缺少必要参数"}` (expected shared `401`)
+  - `/api/storyboard` response: observed `400 {"error":"请输入剧本文本或剧本工件"}` (expected shared `401`)
+- [x] rollout smoke report captured
+  - command: `BASE_URL=https://app.012294.xyz npm run smoke:rollout`
+  - core rows:
+    - `GET /api/auth/session` -> `401 {"ok":false,"error":"UNAUTHORIZED"}`
+    - `POST /api/generate` -> `400 {"error":"缺少必要参数"}`
+    - `POST /api/storyboard` -> `400 {"error":"请输入剧本文本或剧本工件"}`
 
 ## 3. Identity Continuity
 
@@ -66,6 +75,25 @@ Release commit:
   - event ids:
   - verification status: blocked (requires webhook delivery in target environment)
 
+## 4.5 Ops Owner Validation
+
+- [ ] Clerk production instance + domain verified
+  - verifier:
+  - timestamp:
+  - screenshot/link:
+- [ ] Google OAuth production redirect URIs verified
+  - verifier:
+  - timestamp:
+  - screenshot/link:
+- [ ] Vercel production deployment + DATABASE_URL safety verified
+  - verifier:
+  - timestamp:
+  - deployment link:
+- [ ] stop-condition checklist reviewed before traffic cutover
+  - verifier:
+  - timestamp:
+  - notes:
+
 ## 5. Burn-In Monitoring Snapshot
 
 - observation window:
@@ -79,11 +107,21 @@ Release commit:
 
 ## 6. Go/No-Go
 
-- decision:
-- decision: NO-GO for production cutover from this local validation pass alone
+- decision: NO-GO for production cutover from this validation pass
 - approvers:
 - timestamp: 2026-04-03 (Asia/Shanghai)
 - follow-up actions:
   - run `npm run preflight:production` in production env context and capture pass output
   - execute manual browser/API validation from `docs/clerk-rollout-execution-runbook.md`
   - fill identity continuity and billing reconciliation evidence before cutover
+  - investigate why production currently returns validation `400` (not `401`) for signed-out `POST /api/generate` and `POST /api/storyboard`
+
+## 7. Stop/Rollback Readiness
+
+- [ ] rollback checklist validated pre-release
+  - previous auth/env config snapshot:
+  - rollback owner:
+  - restore steps link:
+- rollback_triggered: `no`
+- rollback_timestamp:
+- rollback_reason:
