@@ -10,7 +10,7 @@ PR:
 
 Release commit:
 
-- `16bf6bf`
+- `57d51c0`
 
 ## 1. Engineering Health Gates
 
@@ -39,15 +39,16 @@ Release commit:
 - [ ] signed-in no-loop checks
   - routes checked:
   - screenshot links: blocked (manual browser pass pending)
-- [ ] generation route 401 checks (signed out)
-  - `/api/generate` response: observed `400 {"error":"缺少必要参数"}` (expected shared `401`)
-  - `/api/storyboard` response: observed `400 {"error":"请输入剧本文本或剧本工件"}` (expected shared `401`)
+- [x] generation route 401 checks (signed out)
+  - `/api/generate` response: `401 {"ok":false,"error":"UNAUTHORIZED"}`
+  - `/api/storyboard` response: `401 {"ok":false,"error":"UNAUTHORIZED"}`
 - [x] rollout smoke report captured
   - command: `BASE_URL=https://app.012294.xyz npm run smoke:rollout`
+  - deployment: `dpl_CPSh4j3qhwG9taBNxkpUqFKBAFMk` (`https://app.012294.xyz`, production READY)
   - core rows:
     - `GET /api/auth/session` -> `401 {"ok":false,"error":"UNAUTHORIZED"}`
-    - `POST /api/generate` -> `400 {"error":"缺少必要参数"}`
-    - `POST /api/storyboard` -> `400 {"error":"请输入剧本文本或剧本工件"}`
+    - `POST /api/generate` -> `401 {"ok":false,"error":"UNAUTHORIZED"}`
+    - `POST /api/storyboard` -> `401 {"ok":false,"error":"UNAUTHORIZED"}`
 
 ## 3. Identity Continuity
 
@@ -114,7 +115,7 @@ Release commit:
   - run `npm run preflight:production` in production env context and capture pass output
   - execute manual browser/API validation from `docs/clerk-rollout-execution-runbook.md`
   - fill identity continuity and billing reconciliation evidence before cutover
-  - investigate why production currently returns validation `400` (not `401`) for signed-out `POST /api/generate` and `POST /api/storyboard`
+  - complete signed-in no-loop verification and Ops owner checklist items
 
 ## 7. Stop/Rollback Readiness
 
