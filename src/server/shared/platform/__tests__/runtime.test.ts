@@ -95,6 +95,7 @@ describe('platform runtime', () => {
 
   it('tracks usage snapshots in memory', async () => {
     const meter = createInMemoryUsageMeter();
+    const occurredAt = new Date().toISOString();
 
     await meter.record({
       workspaceId: 'ws_test',
@@ -102,7 +103,7 @@ describe('platform runtime', () => {
       unit: 'request',
       amount: 1,
       plan: 'free',
-      metadata: { occurredAt: '2026-03-22T00:00:00.000Z' },
+      metadata: { occurredAt },
     });
     await meter.record({
       workspaceId: 'ws_test',
@@ -110,7 +111,7 @@ describe('platform runtime', () => {
       unit: 'character',
       amount: 1200,
       plan: 'free',
-      metadata: { occurredAt: '2026-03-22T00:00:00.000Z' },
+      metadata: { occurredAt },
     });
 
     const snapshot = await meter.snapshot('ws_test');
