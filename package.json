@@ -4,9 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
+    "prebuild": "node scripts/preflight-env.mjs",
     "build": "next build --webpack",
+    "prestart": "node scripts/preflight-env.mjs",
     "start": "next start",
     "lint": "eslint",
+    "preflight:production": "node scripts/preflight-env.mjs --mode=production",
     "typecheck": "mkdir -p .next/types .next/dev/types && next typegen && tsc --noEmit --incremental false",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -96,10 +96,12 @@
 
 ## 9. Deployment Checks
 
+- [ ] Run `npm run preflight:production`
 - [ ] Deploy with Clerk production keys
 - [ ] Confirm middleware is active in production
 - [ ] Confirm `npm test` passed on the branch before release
 - [ ] Confirm `npm run typecheck` passed on the branch before release
+- [ ] Confirm `npm run build` passed on the branch before release
 
 ## 10. Post-Launch Monitoring
 

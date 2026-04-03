@@ -9,7 +9,7 @@ on:
 
 jobs:
   test:
-    name: Typecheck and Test
+    name: Typecheck, Test, and Build
     runs-on: ubuntu-latest
 
     steps:
@@ -30,3 +30,6 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Run build
+        run: npm run build

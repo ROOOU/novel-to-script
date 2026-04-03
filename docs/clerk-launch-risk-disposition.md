@@ -81,10 +81,13 @@ These are still checklist items, not proven rollout facts:
 
 ### Build and deploy gate
 
-CI currently covers `typecheck` and `vitest`, but not a full production build gate.
-Before rollout, run or add:
+CI now includes a full `npm run build` gate, and the repository has a production preflight command:
 
 - `npm run build`
+- `npm run preflight:production`
+
+Before rollout, explicitly run and record:
+
 - a production-like smoke test on the deployed preview or staging target
 
 ## 3. Safe To Observe During Burn-In
