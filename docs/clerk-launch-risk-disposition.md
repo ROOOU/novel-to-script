@@ -4,6 +4,7 @@ Status as of 2026-04-03:
 
 - PR branch: `codex/clerk-auth-migration`
 - Latest fix: `5cab810` closed the two pre-landing redirect blockers
+- Latest follow-up: `generate` and `storyboard` now use the viewer-required platform-context contract
 - Local verification: `npm run typecheck`, `npm test`
 
 This document separates the remaining Clerk migration risks into three buckets:
@@ -14,32 +15,15 @@ This document separates the remaining Clerk migration risks into three buckets:
 
 ## 1. Must Fix Before Merge
 
-### Optional-viewer write paths can fall back to demo context
+No known merge-blocking code risks remain from the original review set.
 
-`getCurrentViewer()` currently swallows Clerk identity and viewer-sync failures and returns `null`.
-That is acceptable for read-only best-effort UI rendering, but it is riskier on write paths that
-continue with optional viewer context.
-
-Current highest-risk examples:
+The prior highest-risk issue has now been closed:
 
 - `src/app/api/generate/route.ts`
 - `src/app/api/storyboard/route.ts`
-- `src/server/shared/platform/runtime/in-memory-generation-jobs.ts`
 
-Today those routes resolve platform context through `resolveOptionalViewerPlatformContext()`, then
-fall back through `resolveRuntimeWorkspaceId()`, `resolveRuntimeOrganizationId()`, and
-`resolveRuntimeProjectId()` when viewer identity is missing.
-
-Disposition:
-
-- convert these routes to a viewer-required contract before merge, or
-- add an explicit hard failure when viewer sync failed and the request would otherwise hit demo
-  defaults
-
-Reason:
-
-- this is the one remaining path that can turn an auth-bridge failure into the wrong tenant
-  context instead of a clean `401`/`403`
+These routes now use the viewer-required platform-context helper instead of continuing on optional
+viewer defaults when identity resolution fails.
 
 ## 2. Must Validate Before Production Rollout
 
@@ -148,6 +132,6 @@ Suggested ownership split for closing the remaining work:
 
 Current recommendation:
 
-- merge is reasonable once the optional-viewer write-path risk is closed
+- merge is reasonable from the current code state
 - production rollout should wait until the checklist items above are explicitly validated
 - legacy auth secret removal stays in Phase 2 after burn-in, not in the initial cutover

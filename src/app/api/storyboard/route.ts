@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { checkRateLimit, createRateLimitResponse } from '@/lib/rate-limit';
-import { resolveOptionalViewerPlatformContext } from '@/server/auth/http';
+import { requireViewerPlatformContext } from '@/server/auth/http';
 import {
   type StoryboardGenerateRequest,
   type StoryboardGenerationEvent,
@@ -29,7 +29,10 @@ export async function POST(request: NextRequest) {
     return createRateLimitResponse(rateLimit);
   }
 
-  const { context: platformContext } = await resolveOptionalViewerPlatformContext(request);
+  const { context: platformContext, response } = await requireViewerPlatformContext(request);
+  if (response) {
+    return response;
+  }
 
   try {
     const runtime = getPlatformRuntime();
