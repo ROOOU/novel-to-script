@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation';
 import { ProjectListClient } from '@/features/saas/ProjectListClient';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { getCurrentViewer } from '@/server/auth/service';
+import { requireViewerForLocalizedPage } from '@/server/auth/http';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 export default async function ProjectsPage({
@@ -10,10 +9,7 @@ export default async function ProjectsPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const viewer = await getCurrentViewer();
-  if (!viewer) {
-    redirect(`/${locale}/login`);
-  }
+  const viewer = await requireViewerForLocalizedPage(locale, '/projects');
 
   const [dictionary, projects] = await Promise.all([
     getDictionary(locale),

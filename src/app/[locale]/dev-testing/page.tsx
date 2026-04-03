@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { DevTestingClient } from '@/features/saas/DevTestingClient';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { getCurrentViewer } from '@/server/auth/service';
+import { requireViewerForLocalizedPage } from '@/server/auth/http';
 import { canAccessDeveloperChannel } from '@/server/dev/channel';
 
 export async function generateMetadata({
@@ -25,10 +25,7 @@ export default async function DevTestingPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const viewer = await getCurrentViewer();
-  if (!viewer) {
-    redirect(`/${locale}/login`);
-  }
+  const viewer = await requireViewerForLocalizedPage(locale, '/dev-testing');
 
   if (!canAccessDeveloperChannel(viewer, process.env)) {
     redirect(`/${locale}/admin`);

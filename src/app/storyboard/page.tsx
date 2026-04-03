@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation';
-import { getCurrentViewer } from '@/server/auth/service';
+import { resolveViewerSafely } from '@/server/auth/http';
 
 export default async function StoryboardPage() {
-  const viewer = await getCurrentViewer();
+  const viewer = await resolveViewerSafely();
   if (viewer) {
     redirect(`/${viewer.session.locale}/projects`);
   }

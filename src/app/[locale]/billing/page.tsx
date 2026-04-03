@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation';
 import { BillingClient } from '@/features/saas/BillingClient';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { getCurrentViewer } from '@/server/auth/service';
+import { requireViewerForLocalizedPage } from '@/server/auth/http';
 import { getBillingSummary } from '@/server/billing/payments';
 
 export default async function BillingPage({
@@ -12,10 +11,7 @@ export default async function BillingPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const [{ locale }, resolvedSearchParams] = await Promise.all([params, searchParams]);
-  const viewer = await getCurrentViewer();
-  if (!viewer) {
-    redirect(`/${locale}/login`);
-  }
+  const viewer = await requireViewerForLocalizedPage(locale, '/billing');
 
   const [dictionary, summary] = await Promise.all([
     getDictionary(locale),

@@ -1,13 +1,13 @@
 import { redirect } from 'next/navigation';
-import { getCurrentViewer } from '@/server/auth/service';
+import { resolveViewerSafely } from '@/server/auth/http';
 
 export default async function ConsolePage({
   params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+  }: {
+    params: Promise<{ locale: string }>;
+  }) {
   const { locale } = await params;
-  const viewer = await getCurrentViewer();
+  const viewer = await resolveViewerSafely();
 
   if (viewer) {
     redirect(`/${locale}/projects`);

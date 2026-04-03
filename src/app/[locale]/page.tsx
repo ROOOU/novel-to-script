@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { LandingPage } from '@/features/landing/LandingPage';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { getCurrentViewer } from '@/server/auth/service';
+import { resolveViewerSafely } from '@/server/auth/http';
 
 export default async function LocalizedHomePage({
   params,
@@ -19,12 +19,4 @@ export default async function LocalizedHomePage({
   }
 
   return <LandingPage locale={locale === 'en-US' ? 'en-US' : 'zh-CN'} dictionary={dictionary} />;
-}
-
-async function resolveViewerSafely() {
-  try {
-    return await getCurrentViewer();
-  } catch {
-    return null;
-  }
 }

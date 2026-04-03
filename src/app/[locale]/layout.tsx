@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { AppShellHeader } from '@/components/AppShellHeader';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { SUPPORTED_LOCALES, isSupportedLocale } from '@/i18n/config';
-import { getCurrentViewer } from '@/server/auth/service';
+import { resolveViewerSafely } from '@/server/auth/http';
 
 export async function generateStaticParams() {
   return SUPPORTED_LOCALES.map((locale) => ({ locale }));
@@ -63,12 +63,4 @@ export default async function LocaleLayout({
       <main>{children}</main>
     </>
   );
-}
-
-async function resolveViewerSafely() {
-  try {
-    return await getCurrentViewer();
-  } catch {
-    return null;
-  }
 }
