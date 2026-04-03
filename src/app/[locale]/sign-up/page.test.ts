@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getCurrentViewer: vi.fn(),
   redirect: vi.fn(),
+  headers: vi.fn(),
 }));
 
 vi.mock('@/server/auth/service', () => ({
@@ -14,10 +15,15 @@ vi.mock('next/navigation', () => ({
   redirect: (...args: unknown[]) => mocks.redirect(...args),
 }));
 
+vi.mock('next/headers', () => ({
+  headers: () => mocks.headers(),
+}));
+
 describe('localized sign-up page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getCurrentViewer.mockResolvedValue(null);
+    mocks.headers.mockResolvedValue(new Headers({ origin: 'https://app.012294.xyz' }));
   });
 
   it('renders the localized sign-up wrapper and preserves redirect_url', async () => {
@@ -25,14 +31,31 @@ describe('localized sign-up page', () => {
     const page = await SignUpPage({
       params: Promise.resolve({ locale: 'en-US' }),
       searchParams: Promise.resolve({
-        redirect_url: 'https://app.012294.xyz/en-US/pricing',
+        redirect_url: '/en-US/pricing',
       }),
     });
 
     expect(page.type.name).toBe('SignUpForm');
     expect(page.props).toMatchObject({
       locale: 'en-US',
-      redirectUrl: 'https://app.012294.xyz/en-US/pricing',
+      redirectUrl: '/en-US/pricing',
+    });
+    expect(mocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it('rejects off-site redirect targets', async () => {
+    const SignUpPage = (await import('@/app/[locale]/sign-up/page')).default;
+    const page = await SignUpPage({
+      params: Promise.resolve({ locale: 'en-US' }),
+      searchParams: Promise.resolve({
+        redirect_url: 'https://evil.example/en-US/pricing',
+      }),
+    });
+
+    expect(page.type.name).toBe('SignUpForm');
+    expect(page.props).toMatchObject({
+      locale: 'en-US',
+      redirectUrl: '/en-US/projects',
     });
     expect(mocks.redirect).not.toHaveBeenCalled();
   });

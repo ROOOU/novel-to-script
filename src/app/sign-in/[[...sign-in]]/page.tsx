@@ -9,7 +9,7 @@ export default async function SignInPage({
 }) {
   const locale = await resolvePreferredLocale();
   const params = await searchParams;
-  const redirectUrl = resolveRedirectUrl(params.redirect_url, locale);
+  const redirectUrl = await resolveRedirectUrl(params.redirect_url, locale);
 
   redirect(buildLocalizedLoginUrl(locale, redirectUrl));
 }
@@ -25,17 +25,71 @@ async function resolvePreferredLocale() {
   return resolveLocaleFromAcceptLanguage(requestHeaders.get('accept-language'));
 }
 
-function resolveRedirectUrl(redirectUrl: string | undefined, locale: string) {
+async function resolveRedirectUrl(redirectUrl: string | undefined, locale: string) {
   const normalized = redirectUrl?.trim();
   if (!normalized) {
     return `/${locale}/projects`;
   }
 
-  return normalized;
+  const allowedOrigin = await resolveAllowedOrigin();
+  const safeRedirect = normalizeRedirectTarget(normalized, allowedOrigin);
+  return safeRedirect ?? `/${locale}/projects`;
 }
 
 function buildLocalizedLoginUrl(locale: string, redirectUrl: string) {
   return redirectUrl
     ? `/${locale}/login?redirect_url=${encodeURIComponent(redirectUrl)}`
     : `/${locale}/login`;
+}
+
+async function resolveAllowedOrigin() {
+  const requestHeaders = await headers();
+  const headerOrigin = requestHeaders.get('origin')?.trim();
+  if (headerOrigin) {
+    return headerOrigin;
+  }
+
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (configuredAppUrl) {
+    return new URL(configuredAppUrl).origin;
+  }
+
+  const host = requestHeaders.get('x-forwarded-host')?.trim() || requestHeaders.get('host')?.trim();
+  if (!host) {
+    return null;
+  }
+
+  const proto = requestHeaders.get('x-forwarded-proto')?.trim() || 'https';
+  return `${proto}://${host}`;
+}
+
+function normalizeRedirectTarget(redirectUrl: string, allowedOrigin: string | null) {
+  if (redirectUrl.startsWith('//')) {
+    return null;
+  }
+
+  if (redirectUrl.startsWith('/')) {
+    return isSafeLocalizedPath(redirectUrl) ? redirectUrl : null;
+  }
+
+  if (!allowedOrigin) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(redirectUrl);
+    if (parsed.origin !== allowedOrigin) {
+      return null;
+    }
+
+    const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    return isSafeLocalizedPath(path) ? path : null;
+  } catch {
+    return null;
+  }
+}
+
+function isSafeLocalizedPath(path: string) {
+  const [firstSegment] = path.split('/').filter(Boolean);
+  return isSupportedLocale(firstSegment);
 }

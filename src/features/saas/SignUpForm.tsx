@@ -1,6 +1,7 @@
 'use client';
 
 import { SignUp } from '@clerk/nextjs';
+import { isSupportedLocale } from '@/i18n/config';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 interface SignUpFormProps {
@@ -9,6 +10,8 @@ interface SignUpFormProps {
 }
 
 export function SignUpForm({ locale, redirectUrl }: SignUpFormProps) {
+  const fallbackRedirectUrl = resolveFallbackRedirectUrl(redirectUrl, locale);
+
   return (
     <div className="marketing-shell">
       <div className="auth-card">
@@ -16,9 +19,22 @@ export function SignUpForm({ locale, redirectUrl }: SignUpFormProps) {
           routing="path"
           path="/sign-up"
           signInUrl={`/${locale}/login`}
-          fallbackRedirectUrl={redirectUrl ?? `/${locale}/projects`}
+          fallbackRedirectUrl={fallbackRedirectUrl}
         />
       </div>
     </div>
   );
+}
+
+function resolveFallbackRedirectUrl(redirectUrl: string | undefined, locale: SupportedLocale) {
+  if (!redirectUrl || redirectUrl.startsWith('//')) {
+    return `/${locale}/projects`;
+  }
+
+  return isSafeLocalizedPath(redirectUrl) ? redirectUrl : `/${locale}/projects`;
+}
+
+function isSafeLocalizedPath(path: string) {
+  const [firstSegment] = path.split('/').filter(Boolean);
+  return isSupportedLocale(firstSegment);
 }

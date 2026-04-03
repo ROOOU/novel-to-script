@@ -21,7 +21,12 @@ describe('sign-up page', () => {
     mocks.cookies.mockResolvedValue({
       get: (name: string) => undefined,
     });
-    mocks.headers.mockResolvedValue(new Headers({ 'accept-language': 'en-US,en;q=0.9' }));
+    mocks.headers.mockResolvedValue(
+      new Headers({
+        'accept-language': 'en-US,en;q=0.9',
+        origin: 'https://app.012294.xyz',
+      })
+    );
   });
 
   it('uses the resolved locale for deterministic post-auth redirect without forcing an existing session away', async () => {
@@ -41,8 +46,17 @@ describe('sign-up page', () => {
       }),
     });
 
-    expect(mocks.redirect).toHaveBeenCalledWith(
-      '/en-US/sign-up?redirect_url=https%3A%2F%2Fapp.012294.xyz%2Fzh-CN%2Fpricing'
-    );
+    expect(mocks.redirect).toHaveBeenCalledWith('/en-US/sign-up?redirect_url=%2Fzh-CN%2Fpricing');
+  });
+
+  it('rejects off-site redirect targets', async () => {
+    const SignUpPage = (await import('@/app/sign-up/[[...sign-up]]/page')).default;
+    await SignUpPage({
+      searchParams: Promise.resolve({
+        redirect_url: 'https://evil.example/zh-CN/pricing',
+      }),
+    });
+
+    expect(mocks.redirect).toHaveBeenCalledWith('/en-US/sign-up?redirect_url=%2Fen-US%2Fprojects');
   });
 });

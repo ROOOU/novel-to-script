@@ -3,10 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { SignUpForm } from './SignUpForm';
 
 describe('SignUpForm', () => {
-  it('passes the requested redirect target to Clerk', () => {
+  it('passes a safe localized redirect target to Clerk', () => {
     const page = SignUpForm({
       locale: 'en-US',
-      redirectUrl: 'https://app.012294.xyz/en-US/pricing',
+      redirectUrl: '/en-US/pricing',
     });
 
     expect(page.type).toBe('div');
@@ -16,7 +16,18 @@ describe('SignUpForm', () => {
       routing: 'path',
       path: '/sign-up',
       signInUrl: '/en-US/login',
-      fallbackRedirectUrl: 'https://app.012294.xyz/en-US/pricing',
+      fallbackRedirectUrl: '/en-US/pricing',
+    });
+  });
+
+  it('falls back to projects for unsafe redirect targets', () => {
+    const page = SignUpForm({
+      locale: 'en-US',
+      redirectUrl: 'https://evil.example/en-US/pricing',
+    });
+
+    expect(page.props.children.props.children.props).toMatchObject({
+      fallbackRedirectUrl: '/en-US/projects',
     });
   });
 });

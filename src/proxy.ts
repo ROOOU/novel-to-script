@@ -124,7 +124,7 @@ function resolveRequestLocale(request: NextRequest) {
 
 function getCanonicalRedirectResponse(request: NextRequest) {
   const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (!configuredAppUrl) {
+  if (!configuredAppUrl || process.env.VERCEL_ENV === 'preview') {
     return null;
   }
 
