@@ -13,6 +13,10 @@ This document separates the remaining Clerk migration risks into three buckets:
 2. must validate before production rollout
 3. safe to observe during burn-in
 
+Execution runbook:
+
+- `docs/clerk-rollout-execution-runbook.md`
+
 ## 1. Must Fix Before Merge
 
 No known merge-blocking code risks remain from the original review set.
