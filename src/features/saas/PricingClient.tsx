@@ -48,39 +48,50 @@ export function PricingClient({
     const key = `${payload.purchaseKind}:${payload.planKey ?? payload.creditPackKey ?? 'unknown'}`;
     setBusyKey(key);
     setMessage(null);
-    const response = await fetch(resolvePayPalPurchaseEndpoint(payload.purchaseKind), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...(payload.purchaseKind === 'subscription'
-          ? { planKey: payload.planKey, requestedCurrency: 'USD' }
-          : { creditPackKey: payload.creditPackKey, requestedCurrency: 'USD' }),
-      }),
-    });
-    const result = await response.json();
-    setBusyKey(null);
+    try {
+      const response = await fetch(resolvePayPalPurchaseEndpoint(payload.purchaseKind), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...(payload.purchaseKind === 'subscription'
+            ? { planKey: payload.planKey, requestedCurrency: 'USD' }
+            : { creditPackKey: payload.creditPackKey, requestedCurrency: 'USD' }),
+        }),
+      });
+      let result: Record<string, unknown> | null = null;
+      try {
+        result = (await response.json()) as Record<string, unknown>;
+      } catch {
+        result = null;
+      }
 
-    if (!response.ok || !result.ok) {
-      if (response.status === 401) {
-        redirectToCanonicalSignIn(locale);
+      if (!response.ok || !result || result.ok !== true) {
+        if (response.status === 401) {
+          redirectToCanonicalSignIn(locale);
+          return;
+        }
+
+        setMessage(resolvePricingErrorMessage(result, locale));
         return;
       }
 
-      setMessage(result.error ?? getDefaultPricingError(locale));
-      return;
-    }
+      const checkoutUrl = resolveCheckoutUrl(result);
+      if (checkoutUrl) {
+        window.location.assign(checkoutUrl);
+        return;
+      }
 
-    if (result.checkout?.url) {
-      window.location.href = result.checkout.url;
-      return;
+      startTransition(() => {
+        router.push(`/${locale}/billing`);
+        router.refresh();
+      });
+    } catch {
+      setMessage(getDefaultPricingError(locale));
+    } finally {
+      setBusyKey(null);
     }
-
-    startTransition(() => {
-      router.push(`/${locale}/billing`);
-      router.refresh();
-    });
   }
 
   return (
@@ -164,6 +175,39 @@ function getFreePlanActionLabel(locale: SupportedLocale) {
 
 function getDefaultPricingError(locale: SupportedLocale) {
   return locale === 'en-US' ? 'Unable to start checkout.' : '暂时无法发起结账。';
+}
+
+function resolvePricingErrorMessage(result: Record<string, unknown> | null, locale: SupportedLocale) {
+  if (!result) {
+    return getDefaultPricingError(locale);
+  }
+
+  const errorValue = result.error;
+  if (typeof errorValue === 'string' && errorValue.trim().length > 0) {
+    return errorValue;
+  }
+
+  return getDefaultPricingError(locale);
+}
+
+function resolveCheckoutUrl(result: Record<string, unknown>) {
+  const checkout = result.checkout;
+  if (!checkout || typeof checkout !== 'object') {
+    return null;
+  }
+
+  const checkoutRecord = checkout as Record<string, unknown>;
+  const url = checkoutRecord.url;
+  if (typeof url === 'string' && url.length > 0) {
+    return url;
+  }
+
+  const approvalUrl = checkoutRecord.approvalUrl;
+  if (typeof approvalUrl === 'string' && approvalUrl.length > 0) {
+    return approvalUrl;
+  }
+
+  return null;
 }
 
 function resolvePayPalPurchaseEndpoint(purchaseKind: 'subscription' | 'credit-pack') {

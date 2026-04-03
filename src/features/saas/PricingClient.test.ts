@@ -102,4 +102,99 @@ describe('PricingClient', () => {
     );
     expect(fetchMock).toHaveBeenCalledWith('/api/billing/paypal/create-subscription', expect.any(Object));
   });
+
+  it('redirects to paypal approvalUrl when checkout succeeds', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        ok: true,
+        checkout: {
+          approvalUrl: 'https://paypal.test/approve/subscription',
+        },
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { PricingClient } = await import('@/features/saas/PricingClient');
+    const tree = PricingClient({
+      locale: 'en-US',
+      plans: [
+        {
+          key: 'creator',
+          name: { 'en-US': 'Creator', 'zh-CN': '创作者版' },
+          description: { 'en-US': 'Creator plan', 'zh-CN': '创作者方案' },
+          prices: { USD: { amountCents: 1000 } },
+          monthlyCredits: 100,
+        } as never,
+      ],
+      creditPacks: [],
+      labels: {
+        title: 'Pricing',
+        subtitle: 'Subtitle',
+        billingHint: 'Billing hint',
+        packsTitle: 'Packs',
+        manualHint: 'Manual hint',
+        subscribe: 'Subscribe',
+        buyCredits: 'Buy credits',
+      },
+    });
+
+    const button = childrenOf(tree)
+      .flatMap((child) => childrenOf(child))
+      .flatMap((child) => childrenOf(child))
+      .find((child) => React.isValidElement(child) && child.type === 'button');
+
+    if (!button || !React.isValidElement(button)) {
+      throw new Error('Expected checkout button');
+    }
+
+    await (button.props as { onClick: () => Promise<void> }).onClick();
+    await Promise.resolve();
+
+    expect((window.location.assign as unknown as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith(
+      'https://paypal.test/approve/subscription'
+    );
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when checkout request fails before JSON parsing', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('Network down'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { PricingClient } = await import('@/features/saas/PricingClient');
+    const tree = PricingClient({
+      locale: 'en-US',
+      plans: [
+        {
+          key: 'creator',
+          name: { 'en-US': 'Creator', 'zh-CN': '创作者版' },
+          description: { 'en-US': 'Creator plan', 'zh-CN': '创作者方案' },
+          prices: { USD: { amountCents: 1000 } },
+          monthlyCredits: 100,
+        } as never,
+      ],
+      creditPacks: [],
+      labels: {
+        title: 'Pricing',
+        subtitle: 'Subtitle',
+        billingHint: 'Billing hint',
+        packsTitle: 'Packs',
+        manualHint: 'Manual hint',
+        subscribe: 'Subscribe',
+        buyCredits: 'Buy credits',
+      },
+    });
+
+    const button = childrenOf(tree)
+      .flatMap((child) => childrenOf(child))
+      .flatMap((child) => childrenOf(child))
+      .find((child) => React.isValidElement(child) && child.type === 'button');
+
+    if (!button || !React.isValidElement(button)) {
+      throw new Error('Expected checkout button');
+    }
+
+    await expect((button.props as { onClick: () => Promise<void> }).onClick()).resolves.toBeUndefined();
+  });
 });
