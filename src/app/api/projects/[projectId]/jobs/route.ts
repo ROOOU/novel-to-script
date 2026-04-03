@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createProjectGenerationJob } from '@/server/generation/service';
-import { requireViewerResponse } from '@/server/auth/http';
-import { getPlatformRuntime } from '@/server/shared/platform';
+import { requireViewerPlatformContext } from '@/server/auth/http';
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
 import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
+import {
+  applyPlatformResponseHeaders,
+  getPlatformRuntime,
+} from '@/server/shared/platform';
 import { createJobSchema } from './schema';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -19,27 +22,33 @@ export async function GET(
   const runtime = getPlatformRuntime();
   const project = await runtime.projects.getById(projectId);
   if (!project || project.organizationId !== viewer.organization.id) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'PROJECT_NOT_FOUND',
-      },
-      { status: 404 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: 'PROJECT_NOT_FOUND',
+        },
+        { status: 404 }
+      ),
+      context
     );
   }
 
   const jobs = await runtime.generationJobs.listByProjectId(projectId);
-  return NextResponse.json({
-    ok: true,
-    jobs: jobs.sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
-  });
+  return applyPlatformResponseHeaders(
+    NextResponse.json({
+      ok: true,
+      jobs: jobs.sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    }),
+    context
+  );
 }
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -48,12 +57,15 @@ export async function POST(
   const runtime = getPlatformRuntime();
   const project = await runtime.projects.getById(projectId);
   if (!project || project.organizationId !== viewer.organization.id) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'PROJECT_NOT_FOUND',
-      },
-      { status: 404 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: 'PROJECT_NOT_FOUND',
+        },
+        { status: 404 }
+      ),
+      context
     );
   }
 
@@ -75,19 +87,25 @@ export async function POST(
       kind: body.kind,
       body: normalizedPayload as ScriptGenerationRequest | StoryboardGenerateRequestV2,
     });
-    return NextResponse.json({
-      ok: true,
-      job,
-    });
+    return applyPlatformResponseHeaders(
+      NextResponse.json({
+        ok: true,
+        job,
+      }),
+      context
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : 'JOB_CREATE_FAILED';
     const status = message === 'INSUFFICIENT_CREDITS' ? 402 : 400;
-    return NextResponse.json(
-      {
-        ok: false,
-        error: message,
-      },
-      { status }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: message,
+        },
+        { status }
+      ),
+      context
     );
   }
 }

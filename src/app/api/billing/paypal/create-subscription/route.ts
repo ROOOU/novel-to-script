@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import type { PlanKey } from '@/server/billing/catalog';
 import { createSubscriptionCheckout } from '@/server/billing/payments';
-import { requireViewerResponse } from '@/server/auth/http';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import { applyPlatformResponseHeaders } from '@/server/shared/platform';
 
 const createSubscriptionSchema = z.object({
   planKey: z.string().min(1),
@@ -11,7 +12,7 @@ const createSubscriptionSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -35,17 +36,23 @@ export async function POST(request: NextRequest) {
       requestedCurrency: body.requestedCurrency,
     });
 
-    return NextResponse.json({
-      ok: true,
-      checkout,
-    });
+    return applyPlatformResponseHeaders(
+      NextResponse.json({
+        ok: true,
+        checkout,
+      }),
+      context
+    );
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : 'PAYPAL_CREATE_SUBSCRIPTION_FAILED',
-      },
-      { status: 400 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : 'PAYPAL_CREATE_SUBSCRIPTION_FAILED',
+        },
+        { status: 400 }
+      ),
+      context
     );
   }
 }

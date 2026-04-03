@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireViewerResponse } from '@/server/auth/http';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import { applyPlatformResponseHeaders } from '@/server/shared/platform';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 const generateCodesSchema = z.object({
@@ -11,7 +12,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -20,12 +21,15 @@ export async function POST(
   const runtime = getPlatformRuntime();
   const campaign = await runtime.redeemCodeCampaigns.getById(id);
   if (!campaign || (campaign.organizationId && campaign.organizationId !== viewer.organization.id)) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'CAMPAIGN_NOT_FOUND',
-      },
-      { status: 404 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: 'CAMPAIGN_NOT_FOUND',
+        },
+        { status: 404 }
+      ),
+      context
     );
   }
 
@@ -42,10 +46,13 @@ export async function POST(
     })
   );
 
-  return NextResponse.json({
-    ok: true,
-    codes,
-  });
+  return applyPlatformResponseHeaders(
+    NextResponse.json({
+      ok: true,
+      codes,
+    }),
+    context
+  );
 }
 
 function buildRedeemCode(prefix: string): string {

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { capturePaymentOrder, findPaymentOrderByProviderOrderId } from '@/server/billing/payments';
-import { requireViewerResponse } from '@/server/auth/http';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import { applyPlatformResponseHeaders } from '@/server/shared/platform';
 
 const captureOrderSchema = z.object({
   paymentOrderId: z.string().optional(),
@@ -11,7 +12,7 @@ const captureOrderSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -20,10 +21,13 @@ export async function POST(request: NextRequest) {
     const body = captureOrderSchema.parse(await request.json());
     if (body.paymentOrderId) {
       const order = await capturePaymentOrder(body.paymentOrderId);
-      return NextResponse.json({
-        ok: true,
-        order,
-      });
+      return applyPlatformResponseHeaders(
+        NextResponse.json({
+          ok: true,
+          order,
+        }),
+        context
+      );
     }
 
     const paymentOrder = body.providerOrderId
@@ -31,27 +35,36 @@ export async function POST(request: NextRequest) {
       : null;
 
     if (!paymentOrder) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: 'PAYMENT_ORDER_NOT_FOUND',
-        },
-        { status: 404 }
+      return applyPlatformResponseHeaders(
+        NextResponse.json(
+          {
+            ok: false,
+            error: 'PAYMENT_ORDER_NOT_FOUND',
+          },
+          { status: 404 }
+        ),
+        context
       );
     }
 
     const order = await capturePaymentOrder(paymentOrder.id);
-    return NextResponse.json({
-      ok: true,
-      order,
-    });
+    return applyPlatformResponseHeaders(
+      NextResponse.json({
+        ok: true,
+        order,
+      }),
+      context
+    );
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : 'PAYPAL_CAPTURE_FAILED',
-      },
-      { status: 400 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : 'PAYPAL_CAPTURE_FAILED',
+        },
+        { status: 400 }
+      ),
+      context
     );
   }
 }

@@ -1,13 +1,13 @@
-import { NextResponse } from 'next/server';
-import { requireViewerResponse } from '@/server/auth/http';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireViewerPlatformContext } from '@/server/auth/http';
 import { fulfillPaymentOrder } from '@/server/billing/payments';
-import { getPlatformRuntime } from '@/server/shared/platform';
+import { applyPlatformResponseHeaders, getPlatformRuntime } from '@/server/shared/platform';
 
 export async function POST(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -16,18 +16,24 @@ export async function POST(
   const runtime = getPlatformRuntime();
   const order = await runtime.paymentOrders.getById(id);
   if (!order || order.organizationId !== viewer.organization.id) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'ORDER_NOT_FOUND',
-      },
-      { status: 404 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: 'ORDER_NOT_FOUND',
+        },
+        { status: 404 }
+      ),
+      context
     );
   }
 
   const fulfilled = await fulfillPaymentOrder(order.id);
-  return NextResponse.json({
-    ok: true,
-    order: fulfilled,
-  });
+  return applyPlatformResponseHeaders(
+    NextResponse.json({
+      ok: true,
+      order: fulfilled,
+    }),
+    context
+  );
 }

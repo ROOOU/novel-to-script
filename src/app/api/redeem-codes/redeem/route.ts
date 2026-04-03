@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { grantCredits } from '@/server/billing/service';
-import { requireViewerResponse } from '@/server/auth/http';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import { applyPlatformResponseHeaders } from '@/server/shared/platform';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 const redeemSchema = z.object({
@@ -9,7 +10,7 @@ const redeemSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -70,18 +71,24 @@ export async function POST(request: NextRequest) {
       createdByUserId: viewer.user.id,
     });
 
-    return NextResponse.json({
-      ok: true,
-      redemption,
-      creditAccount: grant.account,
-    });
+    return applyPlatformResponseHeaders(
+      NextResponse.json({
+        ok: true,
+        redemption,
+        creditAccount: grant.account,
+      }),
+      context
+    );
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : 'REDEEM_FAILED',
-      },
-      { status: 400 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : 'REDEEM_FAILED',
+        },
+        { status: 400 }
+      ),
+      context
     );
   }
 }

@@ -1,17 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getCurrentViewer } from '@/server/auth/service';
+import { requireViewerResponse } from '@/server/auth/http';
 
 export async function GET() {
-  const viewer = await getCurrentViewer();
-
-  if (!viewer) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'UNAUTHORIZED',
-      },
-      { status: 401 }
-    );
+  const { viewer, response } = await requireViewerResponse();
+  if (!viewer || response) {
+    return response;
   }
 
   return NextResponse.json({
@@ -24,4 +17,16 @@ export async function GET() {
       creditAccount: viewer.creditAccount,
     },
   });
+}
+
+export async function DELETE() {
+  return NextResponse.json(
+    {
+      ok: true,
+      accepted: true,
+      message:
+        'Session sign-out accepted. Client-side Clerk sign-out and redirect should complete the logout flow.',
+    },
+    { status: 202 }
+  );
 }

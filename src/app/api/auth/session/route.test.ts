@@ -49,5 +49,20 @@ describe('auth session route', () => {
       ok: false,
       error: 'UNAUTHORIZED',
     });
+    expect(response.headers.get('X-Platform-Plan')).toBeNull();
+    expect(response.headers.get('X-Workspace-Id')).toBeNull();
+  });
+
+  it('accepts delete requests as a bridge-period client-side sign-out acknowledgement', async () => {
+    const { DELETE } = await import('@/app/api/auth/session/route');
+    const response = await DELETE();
+
+    expect(response.status).toBe(202);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      accepted: true,
+      message:
+        'Session sign-out accepted. Client-side Clerk sign-out and redirect should complete the logout flow.',
+    });
   });
 });
