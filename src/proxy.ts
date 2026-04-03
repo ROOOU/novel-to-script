@@ -8,22 +8,35 @@ import {
   isSupportedLocale,
   resolveLocaleFromAcceptLanguage,
 } from '@/i18n/config';
+import { buildLocalizedLoginRedirect } from '@/server/auth/http';
 
 const isProtectedRoute = createRouteMatcher([
   '/:locale/projects(.*)',
   '/:locale/billing(.*)',
+  '/:locale/admin(.*)',
+  '/:locale/redeem(.*)',
+  '/:locale/dev-testing(.*)',
   '/api/projects(.*)',
   '/api/billing(.*)',
+  '/api/admin(.*)',
+  '/api/redeem-codes(.*)',
+  '/api/artifacts(.*)',
 ]);
 
 const isProtectedApiRoute = createRouteMatcher([
   '/api/projects(.*)',
   '/api/billing(.*)',
+  '/api/admin(.*)',
+  '/api/redeem-codes(.*)',
+  '/api/artifacts(.*)',
 ]);
 
 const isProtectedPageRoute = createRouteMatcher([
   '/:locale/projects(.*)',
   '/:locale/billing(.*)',
+  '/:locale/admin(.*)',
+  '/:locale/redeem(.*)',
+  '/:locale/dev-testing(.*)',
 ]);
 
 export default clerkMiddleware(async (auth, request: NextRequest) => {
@@ -49,8 +62,10 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
     if (!authState.userId) {
       logAuthDebug('page_unauthorized', request);
       const locale = resolveRequestLocale(request);
-      const signInUrl = new URL(`/${locale}/login`, request.url);
-      return NextResponse.redirect(signInUrl);
+      const localizedPath = request.nextUrl.pathname.slice(locale.length + 1) || '/';
+      return NextResponse.redirect(
+        new URL(buildLocalizedLoginRedirect(locale, `${localizedPath}${request.nextUrl.search}`), request.url)
+      );
     }
   } else if (isProtectedRoute(request)) {
     await auth.protect();

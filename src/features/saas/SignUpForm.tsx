@@ -1,21 +1,21 @@
 'use client';
 
-import { SignIn } from '@clerk/nextjs';
+import { SignUp } from '@clerk/nextjs';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
-interface LoginFormProps {
+interface SignUpFormProps {
   locale: SupportedLocale;
   redirectUrl?: string;
 }
 
-export function LoginForm({ locale, redirectUrl }: LoginFormProps) {
+export function SignUpForm({ locale, redirectUrl }: SignUpFormProps) {
   return (
     <div className="marketing-shell">
       <div className="auth-card">
-        <SignIn
+        <SignUp
           routing="path"
-          path="/sign-in"
-          signUpUrl={`/${locale}/sign-up`}
+          path="/sign-up"
+          signInUrl={`/${locale}/login`}
           fallbackRedirectUrl={redirectUrl ?? `/${locale}/projects`}
         />
       </div>

@@ -23,8 +23,8 @@ interface LandingStep {
 export function LandingPage({ locale, dictionary }: LandingPageProps) {
   const isEnglish = locale === 'en-US';
   const primaryHref = `/${locale}/projects`;
-  const signInHref = '/sign-in';
-  const signUpHref = '/sign-up';
+  const signInHref = `/${locale}/login`;
+  const signUpHref = `/${locale}/sign-up`;
   const pricingHref = `/${locale}/pricing`;
   const primaryAction = isEnglish ? 'Open the studio' : '进入项目中心';
   const secondaryAction = isEnglish ? 'Create an account' : '注册并开始';

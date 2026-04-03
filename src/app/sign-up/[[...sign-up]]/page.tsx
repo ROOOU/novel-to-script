@@ -1,4 +1,4 @@
-import { SignUp } from '@clerk/nextjs';
+import { redirect } from 'next/navigation';
 import { cookies, headers } from 'next/headers';
 import { LOCALE_COOKIE_NAME, isSupportedLocale, resolveLocaleFromAcceptLanguage } from '@/i18n/config';
 
@@ -10,15 +10,7 @@ export default async function SignUpPage({
   const locale = await resolvePreferredLocale();
   const params = await searchParams;
   const redirectUrl = resolveRedirectUrl(params.redirect_url, locale);
-
-  return (
-    <SignUp
-      routing="path"
-      path="/sign-up"
-      signInUrl="/sign-in"
-      fallbackRedirectUrl={redirectUrl}
-    />
-  );
+  redirect(buildLocalizedSignUpUrl(locale, redirectUrl));
 }
 
 async function resolvePreferredLocale() {
@@ -39,4 +31,10 @@ function resolveRedirectUrl(redirectUrl: string | undefined, locale: string) {
   }
 
   return normalized;
+}
+
+function buildLocalizedSignUpUrl(locale: string, redirectUrl: string) {
+  return redirectUrl
+    ? `/${locale}/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`
+    : `/${locale}/sign-up`;
 }

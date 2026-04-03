@@ -179,7 +179,7 @@ function redirectToCanonicalSignIn(locale: SupportedLocale) {
 
   const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
   const baseUrl = configuredAppUrl || window.location.origin;
-  const redirectTarget = new URL('/sign-in', baseUrl);
+  const redirectTarget = new URL(`/${locale}/login`, baseUrl);
   redirectTarget.searchParams.set('redirect_url', new URL(`/${locale}/pricing`, baseUrl).toString());
   window.location.assign(redirectTarget.toString());
 }

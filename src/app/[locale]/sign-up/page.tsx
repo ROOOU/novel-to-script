@@ -1,9 +1,9 @@
 import { redirect } from 'next/navigation';
-import { LoginForm } from '@/features/saas/LoginForm';
+import { SignUpForm } from '@/features/saas/SignUpForm';
 import { isSupportedLocale } from '@/i18n/config';
 import { resolveViewerSafely } from '@/server/auth/http';
 
-export default async function LoginPage({
+export default async function SignUpPage({
   params,
   searchParams,
 }: {
@@ -18,5 +18,5 @@ export default async function LoginPage({
   }
 
   const resolvedLocale = isSupportedLocale(locale) ? locale : 'zh-CN';
-  return <LoginForm locale={resolvedLocale} redirectUrl={redirectUrl?.trim()} />;
+  return <SignUpForm locale={resolvedLocale} redirectUrl={redirectUrl?.trim()} />;
 }

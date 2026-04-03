@@ -18,11 +18,29 @@ vi.mock('@clerk/nextjs/server', () => ({
         if (pattern === '/:locale/billing(.*)') {
           return /^\/[^/]+\/billing(?:\/.*)?$/.test(path);
         }
+        if (pattern === '/:locale/admin(.*)') {
+          return /^\/[^/]+\/admin(?:\/.*)?$/.test(path);
+        }
+        if (pattern === '/:locale/redeem(.*)') {
+          return /^\/[^/]+\/redeem(?:\/.*)?$/.test(path);
+        }
+        if (pattern === '/:locale/dev-testing(.*)') {
+          return /^\/[^/]+\/dev-testing(?:\/.*)?$/.test(path);
+        }
         if (pattern === '/api/projects(.*)') {
           return /^\/api\/projects(?:\/.*)?$/.test(path);
         }
         if (pattern === '/api/billing(.*)') {
           return /^\/api\/billing(?:\/.*)?$/.test(path);
+        }
+        if (pattern === '/api/admin(.*)') {
+          return /^\/api\/admin(?:\/.*)?$/.test(path);
+        }
+        if (pattern === '/api/redeem-codes(.*)') {
+          return /^\/api\/redeem-codes(?:\/.*)?$/.test(path);
+        }
+        if (pattern === '/api/artifacts(.*)') {
+          return /^\/api\/artifacts(?:\/.*)?$/.test(path);
         }
         return false;
       });
@@ -50,6 +68,48 @@ describe('proxy', () => {
     });
   });
 
+  it('returns 401 json for unauthenticated admin api routes', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/api/admin/payment-orders/po_123/confirm')
+    )) as Response;
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'UNAUTHORIZED',
+    });
+  });
+
+  it('returns 401 json for unauthenticated redeem-codes api routes', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/api/redeem-codes/redeem')
+    )) as Response;
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'UNAUTHORIZED',
+    });
+  });
+
+  it('returns 401 json for unauthenticated artifacts api routes', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/api/artifacts/artifact_123/download')
+    )) as Response;
+
+    expect(response.status).toBe(401);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'UNAUTHORIZED',
+    });
+  });
+
   it('redirects unauthenticated protected page routes to the localized login page', async () => {
     const proxy = (await import('@/proxy')).default as any;
     const response = (await proxy(
@@ -58,7 +118,61 @@ describe('proxy', () => {
     )) as Response;
 
     expect(response.status).toBe(307);
-    expect(response.headers.get('location')).toBe('https://app.012294.xyz/zh-CN/login');
+    expect(response.headers.get('location')).toBe(
+      'https://app.012294.xyz/zh-CN/login?redirect_url=%2Fzh-CN%2Fprojects'
+    );
+  });
+
+  it('preserves the original path and query when redirecting unauthenticated protected page routes', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/zh-CN/projects?tab=recent')
+    )) as Response;
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://app.012294.xyz/zh-CN/login?redirect_url=%2Fzh-CN%2Fprojects%3Ftab%3Drecent'
+    );
+  });
+
+  it('redirects unauthenticated admin routes to the localized login page', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/zh-CN/admin')
+    )) as Response;
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://app.012294.xyz/zh-CN/login?redirect_url=%2Fzh-CN%2Fadmin'
+    );
+  });
+
+  it('redirects unauthenticated redeem routes to the localized login page', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/en-US/redeem')
+    )) as Response;
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://app.012294.xyz/en-US/login?redirect_url=%2Fen-US%2Fredeem'
+    );
+  });
+
+  it('redirects unauthenticated dev-testing routes to the localized login page', async () => {
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/zh-CN/dev-testing?tab=logs')
+    )) as Response;
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://app.012294.xyz/zh-CN/login?redirect_url=%2Fzh-CN%2Fdev-testing%3Ftab%3Dlogs'
+    );
   });
 
   it('allows authenticated protected page routes through', async () => {

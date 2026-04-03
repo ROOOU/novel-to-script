@@ -44,6 +44,40 @@ describe('AppShellHeader', () => {
     expect(shouldFetchBillingSummary(true)).toBe(true);
   });
 
+  it('routes signed-out header auth entry through the localized login wrapper', async () => {
+    mocks.useUser.mockReturnValue({
+      isLoaded: true,
+      isSignedIn: false,
+      user: null,
+    });
+
+    const { AppShellHeader } = await import('@/components/AppShellHeader');
+    const html = renderToStaticMarkup(
+      React.createElement(AppShellHeader, {
+        locale: 'zh-CN',
+        signedIn: false,
+        labels: {
+          brandBadge: 'Beta',
+          signIn: '登录',
+          signUp: '注册',
+          signOut: '退出',
+          home: '首页',
+          pricing: '价格',
+          projects: '项目',
+          billing: '账单',
+          redeem: '兑换',
+          admin: '管理',
+        },
+        userDisplayName: null,
+        initialCredits: null,
+      })
+    );
+
+    expect(html).toContain('href="/zh-CN/login"');
+    expect(html).toContain('href="/zh-CN/sign-up"');
+    expect(html).not.toContain('href="/sign-in"');
+  });
+
   it('shows the signed-in account state when Clerk is signed in on the client', async () => {
     mocks.useUser.mockReturnValue({
       isLoaded: true,

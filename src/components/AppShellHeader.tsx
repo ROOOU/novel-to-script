@@ -158,10 +158,10 @@ export function AppShellHeader({
             </div>
           ) : (
             <div className="header-auth-actions">
-              <Link href="/sign-in" className="secondary-button ghost-button">
+              <Link href={`/${locale}/login`} className="secondary-button ghost-button">
                 {labels.signIn}
               </Link>
-              <Link href="/sign-up" className="primary-button">
+              <Link href={`/${locale}/sign-up`} className="primary-button">
                 {labels.signUp}
               </Link>
             </div>
