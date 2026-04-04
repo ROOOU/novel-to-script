@@ -431,6 +431,10 @@ export const redeemCodeRedemptionsTable = pgTable(
   (table) => ({
     organizationIdx: index('redeem_code_redemptions_organization_idx').on(table.organizationId),
     redeemCodeIdx: index('redeem_code_redemptions_code_idx').on(table.redeemCodeId),
+    redeemCodeOrganizationIdx: uniqueIndex('redeem_code_redemptions_code_organization_idx').on(
+      table.redeemCodeId,
+      table.organizationId
+    ),
   })
 );
 

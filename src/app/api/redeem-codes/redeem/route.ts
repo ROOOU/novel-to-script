@@ -57,18 +57,36 @@ export async function POST(request: NextRequest) {
       note: `Redeemed ${redeemCode.code}`,
     });
 
+    let redemption;
+    try {
+      redemption = await runtime.redeemCodeRedemptions.create({
+        redeemCodeId: redeemCode.id,
+        campaignId: campaign.id,
+        organizationId: viewer.organization.id,
+        userId: viewer.user.id,
+        creditLedgerEntryId: grant.ledgerEntry.id,
+        createdByUserId: viewer.user.id,
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        // Another concurrent request already redeemed this code for the org.
+        // Revert provisional credit grant so final balance remains consistent.
+        await grantCredits({
+          organizationId: viewer.organization.id,
+          userId: viewer.user.id,
+          credits: -redeemCode.creditsGranted,
+          kind: 'manual_adjustment',
+          redeemCodeId: redeemCode.id,
+          note: `Redeem rollback ${redeemCode.code}`,
+        });
+        throw new Error('REDEEM_CODE_ALREADY_USED');
+      }
+      throw error;
+    }
+
     await runtime.redeemCodes.update(redeemCode.id, {
       redeemedCount: redeemCode.redeemedCount + 1,
       updatedByUserId: viewer.user.id,
-    });
-
-    const redemption = await runtime.redeemCodeRedemptions.create({
-      redeemCodeId: redeemCode.id,
-      campaignId: campaign.id,
-      organizationId: viewer.organization.id,
-      userId: viewer.user.id,
-      creditLedgerEntryId: grant.ledgerEntry.id,
-      createdByUserId: viewer.user.id,
     });
 
     return applyPlatformResponseHeaders(
@@ -91,4 +109,13 @@ export async function POST(request: NextRequest) {
       context
     );
   }
+}
+
+function isUniqueConstraintError(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = 'code' in error ? (error as { code?: unknown }).code : undefined;
+  return code === '23505';
 }

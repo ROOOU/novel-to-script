@@ -587,6 +587,8 @@ CREATE TABLE redeem_code_redemptions (
 
 **索引**：`redeem_code_redemptions_organization_idx`, `redeem_code_redemptions_code_idx`
 
+**唯一约束**：`(redeemCodeId, organizationId)` 复合唯一，用于保证同一组织内同一兑换码只会被成功兑换一次，防止并发场景下的重复兑换。
+
 ### 3.17 platform_store_snapshots
 
 ```sql
@@ -616,6 +618,7 @@ CREATE TABLE platform_store_snapshots (
 | `credit_accounts.organizationId` UNIQUE | 每个 org 只有一个积分账户 |
 | `payment_orders.providerOrderId` UNIQUE | 防止重复支付处理 |
 | `redeem_codes.code` UNIQUE | 兑换码全局唯一 |
+| `(redeem_code_redemptions.redeemCodeId, redeem_code_redemptions.organizationId)` UNIQUE | 同一组织内同一兑换码只能兑换一次，防止并发重复兑换 |
 
 ### 4.2 应用层约束（非数据库外键）
 
