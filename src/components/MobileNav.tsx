@@ -1,61 +1,124 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import { buildLocalizedPath, SUPPORTED_LOCALES } from '@/i18n/config';
+import { NavLinks } from '@/app/nav-links';
+import type { SupportedLocale } from '@/server/shared/platform/domain';
 
-const NAV_ITEMS = [
-  { href: '/', label: '📖 小说转剧本' },
-  { href: '/storyboard', label: '🎥 分镜提示词' },
-];
+interface MobileNavProps {
+  locale: SupportedLocale;
+  pathname: string;
+  navLabels: {
+    projects: string;
+    pricing: string;
+  };
+  authLabels: {
+    signIn: string;
+    signUp: string;
+    signOut: string;
+    credits: string;
+  };
+  signedIn: boolean;
+  userDisplayName?: string | null;
+  userInitials: string;
+  availableCredits: number | null;
+  onSignOut: () => void | Promise<void>;
+}
 
-export function MobileNav() {
-  const pathname = usePathname();
-  const [openedPath, setOpenedPath] = useState<string | null>(null);
-  const isOpen = openedPath === pathname;
+export function MobileNav({
+  locale,
+  pathname,
+  navLabels,
+  authLabels,
+  signedIn,
+  userDisplayName,
+  userInitials,
+  availableCredits,
+  onSignOut,
+}: MobileNavProps) {
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <div className="mobile-nav">
-      <nav className="header-nav header-nav-desktop" aria-label="主导航">
-        {NAV_ITEMS.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={`nav-link ${pathname === item.href ? 'active' : ''}`}
-            onClick={() => setOpenedPath(null)}
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-
       <button
         type="button"
         className="mobile-nav-trigger"
         aria-expanded={isOpen}
         aria-controls="mobile-nav-menu"
-        aria-label={isOpen ? '关闭导航菜单' : '打开导航菜单'}
-        onClick={() => setOpenedPath(isOpen ? null : pathname)}
+        aria-label={isOpen ? 'Close navigation menu' : 'Open navigation menu'}
+        onClick={() => setIsOpen((current) => !current)}
       >
         <span className="mobile-nav-trigger-icon" aria-hidden="true">
           {isOpen ? '×' : '☰'}
         </span>
       </button>
 
-      {isOpen && (
-        <div id="mobile-nav-menu" className="mobile-nav-menu" aria-label="移动端导航">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={`nav-link mobile-nav-link ${pathname === item.href ? 'active' : ''}`}
-              onClick={() => setOpenedPath(null)}
-            >
-              {item.label}
-            </Link>
-          ))}
+      {isOpen ? (
+        <div id="mobile-nav-menu" className="mobile-nav-menu" aria-label="Mobile navigation">
+          <NavLinks
+            locale={locale}
+            labels={navLabels}
+            className="mobile-nav-links"
+            onNavigate={() => setIsOpen(false)}
+          />
+
+          <div className="mobile-nav-section">
+            <span className="mobile-nav-label">{locale === 'en-US' ? 'Language' : '语言'}</span>
+            <div className="locale-switcher mobile-locale-switcher" aria-label="Locale switcher">
+              {SUPPORTED_LOCALES.map((nextLocale) => (
+                <Link
+                  key={nextLocale}
+                  href={buildLocalizedPath(nextLocale, pathname || '/')}
+                  className={`locale-pill ${nextLocale === locale ? 'active' : ''}`}
+                  onClick={() => setIsOpen(false)}
+                >
+                  {nextLocale === 'zh-CN' ? '中文' : 'EN'}
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {signedIn ? (
+            <div className="mobile-nav-section">
+              <div className="mobile-account-card">
+                <span className="account-avatar" aria-hidden="true">
+                  {userInitials}
+                </span>
+                <div className="mobile-account-copy">
+                  <strong>{userDisplayName || 'NovelScript'}</strong>
+                  <span>
+                    {(availableCredits ?? 0).toLocaleString(locale)} {authLabels.credits}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="secondary-button mobile-nav-action"
+                onClick={async () => {
+                  setIsOpen(false);
+                  await onSignOut();
+                }}
+              >
+                {authLabels.signOut}
+              </button>
+            </div>
+          ) : (
+            <div className="mobile-nav-section mobile-nav-auth">
+              <Link
+                href={`/${locale}/login`}
+                className="secondary-button mobile-nav-action"
+                onClick={() => setIsOpen(false)}
+              >
+                {authLabels.signIn}
+              </Link>
+              <Link href={`/${locale}/sign-up`} className="primary-button mobile-nav-action" onClick={() => setIsOpen(false)}>
+                {authLabels.signUp}
+              </Link>
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

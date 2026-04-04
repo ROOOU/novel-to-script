@@ -4,14 +4,19 @@
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
+    "prebuild": "node scripts/preflight-env.mjs",
     "build": "next build --webpack",
+    "prestart": "node scripts/preflight-env.mjs",
     "start": "next start",
+    "smoke:rollout": "node scripts/rollout-smoke.mjs",
     "lint": "eslint",
+    "preflight:production": "node scripts/preflight-env.mjs --mode=production",
     "typecheck": "mkdir -p .next/types .next/dev/types && next typegen && tsc --noEmit --incremental false",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.0.7",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.71.0",
     "drizzle-orm": "^0.45.1",
@@ -21,7 +26,6 @@
     "postgres": "^3.4.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "stripe": "^20.4.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {

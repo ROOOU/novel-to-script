@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createProject } from '@/server/projects/service';
-import { getPlatformRuntime } from '@/server/shared/platform';
-import { requireViewerResponse } from '@/server/auth/http';
+import { applyPlatformResponseHeaders, getPlatformRuntime } from '@/server/shared/platform';
+import { requireViewerPlatformContext } from '@/server/auth/http';
 
 const createProjectSchema = z.object({
   name: z.string().min(1),
@@ -10,24 +10,24 @@ const createProjectSchema = z.object({
   genre: z.string().optional(),
 });
 
-export async function GET() {
-  const { viewer, response } = await requireViewerResponse();
-  if (response || !viewer) {
-    return response;
+export async function GET(request: NextRequest) {
+  const { viewer, response, context } = await requireViewerPlatformContext(request);
+  if (response || !viewer || !context) {
+    return response ?? undefined;
   }
 
   const runtime = getPlatformRuntime();
   const projects = await runtime.projects.listByWorkspaceId(viewer.workspace.id);
-  return NextResponse.json({
+  return applyPlatformResponseHeaders(NextResponse.json({
     ok: true,
     projects,
-  });
+  }), context);
 }
 
 export async function POST(request: NextRequest) {
-  const { viewer, response } = await requireViewerResponse();
-  if (response || !viewer) {
-    return response;
+  const { viewer, response, context } = await requireViewerPlatformContext(request);
+  if (response || !viewer || !context) {
+    return response ?? undefined;
   }
 
   const body = createProjectSchema.parse(await request.json());
@@ -40,8 +40,8 @@ export async function POST(request: NextRequest) {
     genre: body.genre,
   });
 
-  return NextResponse.json({
+  return applyPlatformResponseHeaders(NextResponse.json({
     ok: true,
     project,
-  });
+  }), context);
 }

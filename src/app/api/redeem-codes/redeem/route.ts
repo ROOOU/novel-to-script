@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { grantCredits } from '@/server/billing/service';
-import { requireViewerResponse } from '@/server/auth/http';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import { applyPlatformResponseHeaders } from '@/server/shared/platform';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 const redeemSchema = z.object({
@@ -9,7 +10,7 @@ const redeemSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -56,32 +57,65 @@ export async function POST(request: NextRequest) {
       note: `Redeemed ${redeemCode.code}`,
     });
 
+    let redemption;
+    try {
+      redemption = await runtime.redeemCodeRedemptions.create({
+        redeemCodeId: redeemCode.id,
+        campaignId: campaign.id,
+        organizationId: viewer.organization.id,
+        userId: viewer.user.id,
+        creditLedgerEntryId: grant.ledgerEntry.id,
+        createdByUserId: viewer.user.id,
+      });
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        // Another concurrent request already redeemed this code for the org.
+        // Revert provisional credit grant so final balance remains consistent.
+        await grantCredits({
+          organizationId: viewer.organization.id,
+          userId: viewer.user.id,
+          credits: -redeemCode.creditsGranted,
+          kind: 'manual_adjustment',
+          redeemCodeId: redeemCode.id,
+          note: `Redeem rollback ${redeemCode.code}`,
+        });
+        throw new Error('REDEEM_CODE_ALREADY_USED');
+      }
+      throw error;
+    }
+
     await runtime.redeemCodes.update(redeemCode.id, {
       redeemedCount: redeemCode.redeemedCount + 1,
       updatedByUserId: viewer.user.id,
     });
 
-    const redemption = await runtime.redeemCodeRedemptions.create({
-      redeemCodeId: redeemCode.id,
-      campaignId: campaign.id,
-      organizationId: viewer.organization.id,
-      userId: viewer.user.id,
-      creditLedgerEntryId: grant.ledgerEntry.id,
-      createdByUserId: viewer.user.id,
-    });
-
-    return NextResponse.json({
-      ok: true,
-      redemption,
-      creditAccount: grant.account,
-    });
+    return applyPlatformResponseHeaders(
+      NextResponse.json({
+        ok: true,
+        redemption,
+        creditAccount: grant.account,
+      }),
+      context
+    );
   } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : 'REDEEM_FAILED',
-      },
-      { status: 400 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: error instanceof Error ? error.message : 'REDEEM_FAILED',
+        },
+        { status: 400 }
+      ),
+      context
     );
   }
+}
+
+function isUniqueConstraintError(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = 'code' in error ? (error as { code?: unknown }).code : undefined;
+  return code === '23505';
 }

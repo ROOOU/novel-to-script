@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import type {
+  ArtifactRelation,
   CreditAccount,
   CreditLedgerEntry,
   GenerationArtifact,
@@ -30,6 +31,7 @@ export interface PlatformStoreData {
   sourceDocuments: SourceDocument[];
   generationJobs: GenerationJob[];
   generationArtifacts: GenerationArtifact[];
+  artifactRelations: ArtifactRelation[];
   usageEvents: UsageEvent[];
   subscriptions: Subscription[];
   paymentOrders: PaymentOrder[];
@@ -51,6 +53,7 @@ const DEFAULT_DATA: PlatformStoreData = {
   sourceDocuments: [],
   generationJobs: [],
   generationArtifacts: [],
+  artifactRelations: [],
   usageEvents: [],
   subscriptions: [],
   paymentOrders: [],
@@ -193,6 +196,7 @@ function cloneDefaultStore(): PlatformStoreData {
     sourceDocuments: [],
     generationJobs: [],
     generationArtifacts: [],
+    artifactRelations: [],
     usageEvents: [],
     subscriptions: [],
     paymentOrders: [],
@@ -214,6 +218,7 @@ function normalizeStore(raw: Partial<PlatformStoreData>): PlatformStoreData {
     sourceDocuments: raw.sourceDocuments ?? [],
     generationJobs: raw.generationJobs ?? [],
     generationArtifacts: raw.generationArtifacts ?? [],
+    artifactRelations: raw.artifactRelations ?? [],
     usageEvents: raw.usageEvents ?? [],
     subscriptions: raw.subscriptions ?? [],
     paymentOrders: raw.paymentOrders ?? [],

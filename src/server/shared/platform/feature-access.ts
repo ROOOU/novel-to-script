@@ -112,12 +112,7 @@ export function getPlanHeaderDefault(
   request: PlatformRequestLike
 ): PlatformPlan | undefined {
   const headerPlan = request.headers.get('x-plan')?.trim();
-  if (
-    headerPlan === 'free' ||
-    headerPlan === 'pro' ||
-    headerPlan === 'team' ||
-    headerPlan === 'enterprise'
-  ) {
+  if (headerPlan === 'free' || headerPlan === 'creator' || headerPlan === 'pro') {
     return headerPlan;
   }
 

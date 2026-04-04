@@ -9,6 +9,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import type {
+  ArtifactRelation,
   CreditAccount,
   CreditLedgerEntry,
   GenerationArtifact,
@@ -48,17 +49,22 @@ export const usersTable = pgTable(
     id: text('id').primaryKey(),
     email: text('email').notNull(),
     displayName: text('displayName').notNull(),
+    authProvider: text('authProvider'),
+    authUserId: text('authUserId'),
     passwordHash: text('passwordHash'),
     avatarUrl: text('avatarUrl'),
     preferredLocale: text('preferredLocale'),
     defaultOrganizationId: text('defaultOrganizationId'),
     status: text('status').notNull(),
+    emailVerifiedAt: timestamp('emailVerifiedAt', timestampOptions),
+    lastAuthSyncAt: timestamp('lastAuthSyncAt', timestampOptions),
     lastLoginAt: timestamp('lastLoginAt', timestampOptions),
     ...auditColumns(),
     data: dataColumn<User>(),
   },
   (table) => ({
     emailIdx: uniqueIndex('users_email_idx').on(table.email),
+    authUserIdIdx: uniqueIndex('users_auth_user_id_idx').on(table.authUserId),
     defaultOrganizationIdx: index('users_default_organization_idx').on(table.defaultOrganizationId),
   })
 );
@@ -269,7 +275,6 @@ export const subscriptionsTable = pgTable(
     currency: text('currency'),
     trialEndsAt: timestamp('trialEndsAt', timestampOptions),
     canceledAt: timestamp('canceledAt', timestampOptions),
-    portalManagementEnabled: boolean('portalManagementEnabled').notNull(),
     ...auditColumns(),
     data: dataColumn<Subscription>(),
   },
@@ -293,7 +298,7 @@ export const paymentOrdersTable = pgTable(
     amountCents: integer('amountCents').notNull(),
     currency: text('currency').notNull(),
     creditsGranted: integer('creditsGranted'),
-    checkoutSessionId: text('checkoutSessionId'),
+    providerOrderId: text('providerOrderId'),
     providerCustomerId: text('providerCustomerId'),
     providerSubscriptionId: text('providerSubscriptionId'),
     paidAt: timestamp('paidAt', timestampOptions),
@@ -303,7 +308,25 @@ export const paymentOrdersTable = pgTable(
   },
   (table) => ({
     organizationIdx: index('payment_orders_organization_idx').on(table.organizationId),
-    checkoutSessionIdx: uniqueIndex('payment_orders_checkout_session_idx').on(table.checkoutSessionId),
+    providerOrderIdx: uniqueIndex('payment_orders_provider_order_idx').on(table.providerOrderId),
+  })
+);
+
+export const artifactRelationsTable = pgTable(
+  'artifact_relations',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('projectId').notNull(),
+    upstreamArtifactId: text('upstreamArtifactId').notNull(),
+    downstreamArtifactId: text('downstreamArtifactId').notNull(),
+    relationType: text('relationType').notNull(),
+    metadata: jsonb('metadata').$type<Record<string, unknown> | null>(),
+    ...auditColumns(),
+    data: dataColumn<ArtifactRelation>(),
+  },
+  (table) => ({
+    projectIdx: index('artifact_relations_project_idx').on(table.projectId),
+    downstreamIdx: index('artifact_relations_downstream_idx').on(table.downstreamArtifactId),
   })
 );
 
@@ -408,6 +431,10 @@ export const redeemCodeRedemptionsTable = pgTable(
   (table) => ({
     organizationIdx: index('redeem_code_redemptions_organization_idx').on(table.organizationId),
     redeemCodeIdx: index('redeem_code_redemptions_code_idx').on(table.redeemCodeId),
+    redeemCodeOrganizationIdx: uniqueIndex('redeem_code_redemptions_code_organization_idx').on(
+      table.redeemCodeId,
+      table.organizationId
+    ),
   })
 );
 
@@ -426,6 +453,7 @@ export const platformSchema = {
   sourceDocuments: sourceDocumentsTable,
   generationJobs: generationJobsTable,
   generationArtifacts: generationArtifactsTable,
+  artifactRelations: artifactRelationsTable,
   usageEvents: usageEventsTable,
   subscriptions: subscriptionsTable,
   paymentOrders: paymentOrdersTable,

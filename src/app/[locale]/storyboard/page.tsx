@@ -1,10 +1,17 @@
 import { redirect } from 'next/navigation';
+import { resolveViewerSafely } from '@/server/auth/http';
 
 export default async function StoryboardLegacyRedirect({
   params,
-}: {
-  params: Promise<{ locale: string }>;
-}) {
+  }: {
+    params: Promise<{ locale: string }>;
+  }) {
   const { locale } = await params;
-  redirect(`/${locale}/projects`);
+  const viewer = await resolveViewerSafely();
+
+  if (viewer) {
+    redirect(`/${locale}/projects`);
+  }
+
+  redirect(`/${locale}`);
 }

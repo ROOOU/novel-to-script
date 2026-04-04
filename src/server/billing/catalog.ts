@@ -8,8 +8,8 @@ import type {
   SupportedLocale,
 } from '@/server/shared/platform/domain';
 
-export type PlanKey = 'trial' | 'pro' | 'studio';
-export type CreditPackKey = 'credits-120' | 'credits-400' | 'credits-1000';
+export type PlanKey = 'free' | 'creator' | 'pro';
+export type CreditPackKey = 'credits-50' | 'credits-200' | 'credits-500';
 
 export interface MoneyAmount {
   amountCents: number;
@@ -33,6 +33,14 @@ export interface CreditPackCatalogEntry {
   prices: Record<SupportedCurrency, MoneyAmount>;
 }
 
+interface PlanCatalogDefinition extends Omit<PlanCatalogEntry, 'prices'> {
+  monthlyPriceCents: number;
+}
+
+interface CreditPackCatalogDefinition extends Omit<CreditPackCatalogEntry, 'prices'> {
+  priceCents: number;
+}
+
 export interface PurchaseDescriptor {
   purchaseKind: PurchaseKind;
   provider: BillingProvider;
@@ -43,30 +51,60 @@ export interface PurchaseDescriptor {
   creditsGranted?: number;
 }
 
-export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
-  trial: {
-    key: 'trial',
+export const PLAN_ORDER: readonly PlanKey[] = ['free', 'creator', 'pro'];
+export const CREDIT_PACK_ORDER: readonly CreditPackKey[] = [
+  'credits-50',
+  'credits-200',
+  'credits-500',
+];
+
+const PLAN_DEFINITIONS: Record<PlanKey, PlanCatalogDefinition> = {
+  free: {
+    key: 'free',
     name: {
-      'zh-CN': '试用版',
-      'en-US': 'Trial',
+      'zh-CN': '免费版',
+      'en-US': 'Free',
     },
     description: {
-      'zh-CN': '适合试用核心工作流与项目能力。',
-      'en-US': 'Best for trying the core workflow and project model.',
+      'zh-CN': '适合体验完整流程并开始第一个项目。',
+      'en-US': 'Best for trying the full workflow and launching a first project.',
     },
-    pricingRegion: ['cn', 'global'],
+    pricingRegion: ['global'],
     billingInterval: 'monthly',
-    prices: {
-      CNY: { amountCents: 0, currency: 'CNY' },
-      USD: { amountCents: 0, currency: 'USD' },
-    },
-    monthlyCredits: 60,
+    monthlyPriceCents: 0,
+    monthlyCredits: 30,
     entitlements: {
-      maxProjects: 3,
+      maxProjects: 2,
       maxWorkspaces: 1,
       maxMembers: 1,
       maxConcurrentJobs: 1,
-      monthlyCredits: 60,
+      monthlyCredits: 30,
+      canUseBranding: true,
+      canUseApiAccess: false,
+      canUsePrivateDeployment: false,
+      canUseTeamCollaboration: false,
+    },
+  },
+  creator: {
+    key: 'creator',
+    name: {
+      'zh-CN': '创作者版',
+      'en-US': 'Creator',
+    },
+    description: {
+      'zh-CN': '面向个人创作者的日常改编与快速出稿。',
+      'en-US': 'For daily adaptation work and faster drafts.',
+    },
+    pricingRegion: ['global'],
+    billingInterval: 'monthly',
+    monthlyPriceCents: 990,
+    monthlyCredits: 200,
+    entitlements: {
+      maxProjects: 15,
+      maxWorkspaces: 1,
+      maxMembers: 1,
+      maxConcurrentJobs: 2,
+      monthlyCredits: 200,
       canUseBranding: true,
       canUseApiAccess: false,
       canUsePrivateDeployment: false,
@@ -80,85 +118,52 @@ export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = {
       'en-US': 'Pro',
     },
     description: {
-      'zh-CN': '面向个人创作者与轻量工作室。',
-      'en-US': 'For individual creators and lean studios.',
+      'zh-CN': '面向高产创作者的批量生成与持续迭代。',
+      'en-US': 'For high-volume creators who need batch generation and steady iteration.',
     },
-    pricingRegion: ['cn', 'global'],
+    pricingRegion: ['global'],
     billingInterval: 'monthly',
-    prices: {
-      CNY: { amountCents: 19_900, currency: 'CNY' },
-      USD: { amountCents: 2_900, currency: 'USD' },
-    },
-    monthlyCredits: 300,
+    monthlyPriceCents: 2_900,
+    monthlyCredits: 600,
     entitlements: {
-      maxProjects: 20,
+      maxProjects: null,
       maxWorkspaces: 1,
       maxMembers: 1,
-      maxConcurrentJobs: 2,
-      monthlyCredits: 300,
+      maxConcurrentJobs: 3,
+      monthlyCredits: 600,
       canUseBranding: true,
       canUseApiAccess: false,
       canUsePrivateDeployment: false,
       canUseTeamCollaboration: false,
     },
   },
-  studio: {
-    key: 'studio',
-    name: {
-      'zh-CN': '工作室版',
-      'en-US': 'Studio',
-    },
-    description: {
-      'zh-CN': '面向稳定产出的短剧工作室团队。',
-      'en-US': 'For short-drama studios with consistent production needs.',
-    },
-    pricingRegion: ['cn', 'global'],
-    billingInterval: 'monthly',
-    prices: {
-      CNY: { amountCents: 69_900, currency: 'CNY' },
-      USD: { amountCents: 9_900, currency: 'USD' },
-    },
-    monthlyCredits: 1_200,
-    entitlements: {
-      maxProjects: 100,
-      maxWorkspaces: 5,
-      maxMembers: 10,
-      maxConcurrentJobs: 3,
-      monthlyCredits: 1_200,
-      canUseBranding: true,
-      canUseApiAccess: true,
-      canUsePrivateDeployment: false,
-      canUseTeamCollaboration: true,
-    },
+};
+
+const CREDIT_PACK_DEFINITIONS: Record<CreditPackKey, CreditPackCatalogDefinition> = {
+  'credits-50': {
+    key: 'credits-50',
+    credits: 50,
+    priceCents: 490,
+  },
+  'credits-200': {
+    key: 'credits-200',
+    credits: 200,
+    priceCents: 1_490,
+  },
+  'credits-500': {
+    key: 'credits-500',
+    credits: 500,
+    priceCents: 2_990,
   },
 };
 
-export const CREDIT_PACK_CATALOG: Record<CreditPackKey, CreditPackCatalogEntry> = {
-  'credits-120': {
-    key: 'credits-120',
-    credits: 120,
-    prices: {
-      CNY: { amountCents: 9_900, currency: 'CNY' },
-      USD: { amountCents: 1_500, currency: 'USD' },
-    },
-  },
-  'credits-400': {
-    key: 'credits-400',
-    credits: 400,
-    prices: {
-      CNY: { amountCents: 29_900, currency: 'CNY' },
-      USD: { amountCents: 3_900, currency: 'USD' },
-    },
-  },
-  'credits-1000': {
-    key: 'credits-1000',
-    credits: 1000,
-    prices: {
-      CNY: { amountCents: 69_900, currency: 'CNY' },
-      USD: { amountCents: 8_900, currency: 'USD' },
-    },
-  },
-};
+export const PLAN_CATALOG: Record<PlanKey, PlanCatalogEntry> = createPlanCatalog(PLAN_DEFINITIONS);
+export const PLAN_CATALOG_ENTRIES: PlanCatalogEntry[] = PLAN_ORDER.map((key) => PLAN_CATALOG[key]);
+export const CREDIT_PACK_CATALOG: Record<CreditPackKey, CreditPackCatalogEntry> =
+  createCreditPackCatalog(CREDIT_PACK_DEFINITIONS);
+export const CREDIT_PACK_CATALOG_ENTRIES: CreditPackCatalogEntry[] = CREDIT_PACK_ORDER.map(
+  (key) => CREDIT_PACK_CATALOG[key]
+);
 
 export function getPlanCatalogEntry(planKey: string): PlanCatalogEntry {
   const entry = PLAN_CATALOG[planKey as PlanKey];
@@ -185,18 +190,10 @@ export function getInitialBillingPreferences(locale: SupportedLocale): {
   currency: SupportedCurrency;
   pricingRegion: PricingRegion;
 } {
-  if (locale === 'en-US') {
-    return {
-      locale,
-      currency: 'USD',
-      pricingRegion: 'global',
-    };
-  }
-
   return {
-    locale: 'zh-CN',
-    currency: 'CNY',
-    pricingRegion: 'cn',
+    locale,
+    currency: 'USD',
+    pricingRegion: 'global',
   };
 }
 
@@ -247,4 +244,45 @@ export function estimateJobCredits(
   }
 
   return 30 + Math.max(1, options.episodeCount ?? 1) * 15;
+}
+
+function createPlanCatalog(
+  definitions: Record<PlanKey, PlanCatalogDefinition>
+): Record<PlanKey, PlanCatalogEntry> {
+  return PLAN_ORDER.reduce(
+    (catalog, key) => {
+      const { monthlyPriceCents, ...definition } = definitions[key];
+      catalog[key] = {
+        ...definition,
+        prices: createUsdPriceMap(monthlyPriceCents),
+      };
+      return catalog;
+    },
+    {} as Record<PlanKey, PlanCatalogEntry>
+  );
+}
+
+function createCreditPackCatalog(
+  definitions: Record<CreditPackKey, CreditPackCatalogDefinition>
+): Record<CreditPackKey, CreditPackCatalogEntry> {
+  return CREDIT_PACK_ORDER.reduce(
+    (catalog, key) => {
+      const { priceCents, ...definition } = definitions[key];
+      catalog[key] = {
+        ...definition,
+        prices: createUsdPriceMap(priceCents),
+      };
+      return catalog;
+    },
+    {} as Record<CreditPackKey, CreditPackCatalogEntry>
+  );
+}
+
+function createUsdPriceMap(amountCents: number): Record<SupportedCurrency, MoneyAmount> {
+  return {
+    USD: {
+      amountCents,
+      currency: 'USD',
+    },
+  };
 }

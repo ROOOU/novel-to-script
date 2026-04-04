@@ -1,5 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type {
+  ArtifactRelation,
+  CreateArtifactRelationInput,
   CreateCreditAccountInput,
   CreateCreditLedgerEntryInput,
   CreateGenerationArtifactInput,
@@ -44,6 +46,7 @@ import type {
   Workspace,
 } from '@/server/shared/platform/domain';
 import type {
+  ArtifactRelationRepository,
   CreditAccountRepository,
   CreditLedgerRepository,
   GenerationArtifactRepository,
@@ -62,11 +65,13 @@ import type {
   WorkspaceRepository,
 } from '@/server/shared/platform/repositories';
 import { createEntityId, getNowTimestamp } from '../runtime/file-store';
+import { createPersistentPlatformRuntime } from '../runtime/persistent-runtime';
 import { getDatabaseClient, shouldUseDatabaseRuntime } from './client';
 import {
   creditAccountsTable,
   creditLedgerEntriesTable,
   generationArtifactsTable,
+  artifactRelationsTable,
   generationJobsTable,
   organizationsTable,
   paymentOrdersTable,
@@ -89,6 +94,7 @@ export type DatabasePlatformRuntime = {
   sourceDocuments: SourceDocumentRepository;
   generationJobs: GenerationJobRepository;
   generationArtifacts: GenerationArtifactRepository;
+  artifactRelations: ArtifactRelationRepository;
   usageEvents: UsageEventRepository;
   subscriptions: SubscriptionRepository;
   paymentOrders: PaymentOrderRepository;
@@ -105,8 +111,7 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
   }
 
   const db = getDatabaseClient();
-
-  return {
+  const primaryRuntime: DatabasePlatformRuntime = {
     users: createUserRepository(db),
     organizations: createOrganizationRepository(db),
     workspaces: createWorkspaceRepository(db),
@@ -114,6 +119,7 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
     sourceDocuments: createSourceDocumentRepository(db),
     generationJobs: createGenerationJobRepository(db),
     generationArtifacts: createGenerationArtifactRepository(db),
+    artifactRelations: createArtifactRelationRepository(db),
     usageEvents: createUsageEventRepository(db),
     subscriptions: createSubscriptionRepository(db),
     paymentOrders: createPaymentOrderRepository(db),
@@ -123,16 +129,103 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
     redeemCodes: createRedeemCodeRepository(db),
     redeemCodeRedemptions: createRedeemCodeRedemptionRepository(db),
   };
+
+  return createSchemaFallbackRuntime(primaryRuntime, createPersistentPlatformRuntime(), {
+    onFallback(error) {
+      console.warn('[platform-db] falling back to snapshot runtime because normalized tables are unavailable', {
+        error: error instanceof Error ? error.message : 'UNKNOWN_DATABASE_SCHEMA_ERROR',
+      });
+    },
+  });
+}
+
+export function createSchemaFallbackRuntime<TRuntime extends object>(
+  primaryRuntime: TRuntime,
+  fallbackRuntime: TRuntime,
+  options: {
+    onFallback?: (error: unknown) => void;
+  } = {}
+): TRuntime {
+  let fallbackActivated = false;
+
+  return Object.fromEntries(
+    Object.entries(primaryRuntime as Record<string, Record<string, (...args: any[]) => Promise<any>>>).map(([repositoryName, repository]) => {
+      const fallbackRepository = (fallbackRuntime as Record<string, Record<string, (...args: any[]) => Promise<any>>>)[repositoryName];
+      const wrappedRepository = Object.fromEntries(
+        Object.entries(repository).map(([methodName, method]) => [
+          methodName,
+          async (...args: any[]) => {
+            if (fallbackActivated) {
+              return fallbackRepository[methodName](...args);
+            }
+
+            try {
+              return await method.apply(repository, args);
+            } catch (error) {
+              if (!isMissingPlatformSchemaError(error)) {
+                throw error;
+              }
+
+              fallbackActivated = true;
+              options.onFallback?.(error);
+              return fallbackRepository[methodName](...args);
+            }
+          },
+        ])
+      );
+
+      return [repositoryName, wrappedRepository];
+    })
+  ) as TRuntime;
+}
+
+function isMissingPlatformSchemaError(error: unknown) {
+  return doesErrorDescribeMissingSchema(error) || doesErrorDescribeMissingSchema(getErrorCause(error));
+}
+
+function doesErrorDescribeMissingSchema(error: unknown) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = 'code' in error ? String((error as { code?: unknown }).code ?? '') : '';
+  const message =
+    'message' in error ? String((error as { message?: unknown }).message ?? '').toLowerCase() : '';
+
+  return (
+    code === '42P01' ||
+    code === '42703' ||
+    message.includes('does not exist') ||
+    message.includes('relation') ||
+    message.includes('column') ||
+    message.includes('no such table')
+  );
+}
+
+function getErrorCause(error: unknown) {
+  if (!error || typeof error !== 'object' || !('cause' in error)) {
+    return null;
+  }
+
+  return (error as { cause?: unknown }).cause ?? null;
 }
 
 function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRepository {
   return {
-    async getById(id) {
+    async getById(id: string) {
       return selectOne<User>(db.select({ data: usersTable.data }).from(usersTable).where(eq(usersTable.id, id)));
     },
     async getByEmail(email) {
       return selectOne<User>(
         db.select({ data: usersTable.data }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase()))
+      );
+    },
+    async getByAuthUserId(authUserId) {
+      return selectOne<User>(
+        db
+          .select({ data: usersTable.data })
+          .from(usersTable)
+          .where(eq(usersTable.authUserId, authUserId.trim()))
       );
     },
     async listByIds(ids) {
@@ -150,11 +243,15 @@ function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRep
         id: createEntityId('user'),
         email: input.email.trim().toLowerCase(),
         displayName: input.displayName.trim(),
+        authProvider: input.authProvider ?? null,
+        authUserId: input.authUserId ?? null,
         passwordHash: input.passwordHash ?? null,
         avatarUrl: input.avatarUrl ?? null,
         preferredLocale: input.preferredLocale ?? 'zh-CN',
         defaultOrganizationId: input.defaultOrganizationId ?? null,
         status: input.status ?? 'active',
+        emailVerifiedAt: input.emailVerifiedAt ?? null,
+        lastAuthSyncAt: input.lastAuthSyncAt ?? null,
         lastLoginAt: null,
         createdAt: now,
         updatedAt: now,
@@ -612,6 +709,54 @@ function createGenerationArtifactRepository(db: ReturnType<typeof getDatabaseCli
   };
 }
 
+function createArtifactRelationRepository(db: ReturnType<typeof getDatabaseClient>): ArtifactRelationRepository {
+  async function createRelation(input: CreateArtifactRelationInput): Promise<ArtifactRelation> {
+    const now = getNowTimestamp();
+    const entity: ArtifactRelation = {
+      id: createEntityId('relation'),
+      projectId: input.projectId,
+      upstreamArtifactId: input.upstreamArtifactId,
+      downstreamArtifactId: input.downstreamArtifactId,
+      relationType: input.relationType ?? 'derived_from',
+      metadata: input.metadata,
+      createdAt: now,
+      updatedAt: now,
+      createdByUserId: input.createdByUserId ?? null,
+      updatedByUserId: input.createdByUserId ?? null,
+    };
+    await db.insert(artifactRelationsTable).values(buildArtifactRelationRow(entity));
+    return entity;
+  }
+
+  return {
+    async getById(id) {
+      return selectOne<ArtifactRelation>(
+        db.select({ data: artifactRelationsTable.data }).from(artifactRelationsTable).where(eq(artifactRelationsTable.id, id))
+      );
+    },
+    async create(input: CreateArtifactRelationInput) {
+      return createRelation(input);
+    },
+    async createMany(inputs: CreateArtifactRelationInput[]) {
+      const created: ArtifactRelation[] = [];
+      for (const input of inputs) {
+        created.push(await createRelation(input));
+      }
+      return created;
+    },
+    async listByProjectId(projectId: string) {
+      return selectMany<ArtifactRelation>(
+        db.select({ data: artifactRelationsTable.data }).from(artifactRelationsTable).where(eq(artifactRelationsTable.projectId, projectId))
+      );
+    },
+    async listByDownstreamArtifactId(downstreamArtifactId: string) {
+      return selectMany<ArtifactRelation>(
+        db.select({ data: artifactRelationsTable.data }).from(artifactRelationsTable).where(eq(artifactRelationsTable.downstreamArtifactId, downstreamArtifactId))
+      );
+    },
+  };
+}
+
 function createUsageEventRepository(db: ReturnType<typeof getDatabaseClient>): UsageEventRepository {
   return {
     async getById(id) {
@@ -710,7 +855,6 @@ function createSubscriptionRepository(db: ReturnType<typeof getDatabaseClient>):
         currency: input.currency ?? null,
         trialEndsAt: input.trialEndsAt ?? null,
         canceledAt: input.canceledAt ?? null,
-        portalManagementEnabled: input.portalManagementEnabled ?? false,
         createdAt: now,
         updatedAt: now,
         createdByUserId: input.createdByUserId ?? null,
@@ -750,9 +894,9 @@ function createPaymentOrderRepository(db: ReturnType<typeof getDatabaseClient>):
     async getById(id) {
       return selectOne<PaymentOrder>(db.select({ data: paymentOrdersTable.data }).from(paymentOrdersTable).where(eq(paymentOrdersTable.id, id)));
     },
-    async getByCheckoutSessionId(checkoutSessionId) {
+    async getByProviderOrderId(providerOrderId) {
       return selectOne<PaymentOrder>(
-        db.select({ data: paymentOrdersTable.data }).from(paymentOrdersTable).where(eq(paymentOrdersTable.checkoutSessionId, checkoutSessionId))
+        db.select({ data: paymentOrdersTable.data }).from(paymentOrdersTable).where(eq(paymentOrdersTable.providerOrderId, providerOrderId))
       );
     },
     async listByOrganizationId(organizationId) {
@@ -774,7 +918,7 @@ function createPaymentOrderRepository(db: ReturnType<typeof getDatabaseClient>):
         amountCents: input.amountCents,
         currency: input.currency,
         creditsGranted: input.creditsGranted ?? null,
-        checkoutSessionId: input.checkoutSessionId ?? null,
+        providerOrderId: input.providerOrderId ?? null,
         providerCustomerId: input.providerCustomerId ?? null,
         providerSubscriptionId: input.providerSubscriptionId ?? null,
         paidAt: input.paidAt ?? null,
@@ -1045,10 +1189,14 @@ function normalizeRedeemCode(code: string): string {
 function buildUserRow(entity: User): any {
   return {
     ...entity,
+    authProvider: entity.authProvider ?? null,
+    authUserId: entity.authUserId ?? null,
     passwordHash: entity.passwordHash ?? null,
     avatarUrl: entity.avatarUrl ?? null,
     preferredLocale: entity.preferredLocale ?? null,
     defaultOrganizationId: entity.defaultOrganizationId ?? null,
+    emailVerifiedAt: entity.emailVerifiedAt ?? null,
+    lastAuthSyncAt: entity.lastAuthSyncAt ?? null,
     lastLoginAt: entity.lastLoginAt ?? null,
     createdByUserId: entity.createdByUserId ?? null,
     updatedByUserId: entity.updatedByUserId ?? null,
@@ -1145,6 +1293,16 @@ function buildGenerationArtifactRow(entity: GenerationArtifact): any {
   };
 }
 
+function buildArtifactRelationRow(entity: ArtifactRelation): any {
+  return {
+    ...entity,
+    metadata: entity.metadata ?? undefined,
+    createdByUserId: entity.createdByUserId ?? null,
+    updatedByUserId: entity.updatedByUserId ?? null,
+    data: entity,
+  };
+}
+
 function buildUsageEventRow(entity: UsageEvent): any {
   return {
     ...entity,
@@ -1178,7 +1336,6 @@ function buildSubscriptionRow(entity: Subscription): any {
     currency: entity.currency ?? null,
     trialEndsAt: entity.trialEndsAt ?? null,
     canceledAt: entity.canceledAt ?? null,
-    portalManagementEnabled: entity.portalManagementEnabled ?? false,
     createdByUserId: entity.createdByUserId ?? null,
     updatedByUserId: entity.updatedByUserId ?? null,
     data: entity,
@@ -1192,7 +1349,7 @@ function buildPaymentOrderRow(entity: PaymentOrder): any {
     planKey: entity.planKey ?? null,
     creditPackKey: entity.creditPackKey ?? null,
     creditsGranted: entity.creditsGranted ?? null,
-    checkoutSessionId: entity.checkoutSessionId ?? null,
+    providerOrderId: entity.providerOrderId ?? null,
     providerCustomerId: entity.providerCustomerId ?? null,
     providerSubscriptionId: entity.providerSubscriptionId ?? null,
     paidAt: entity.paidAt ?? null,

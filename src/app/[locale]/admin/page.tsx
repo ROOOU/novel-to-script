@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation';
 import { AdminClient } from '@/features/saas/AdminClient';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { getCurrentViewer } from '@/server/auth/service';
+import { requireViewerForLocalizedPage } from '@/server/auth/http';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 export default async function AdminPage({
@@ -10,10 +9,7 @@ export default async function AdminPage({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  const viewer = await getCurrentViewer();
-  if (!viewer) {
-    redirect(`/${locale}/login`);
-  }
+  const viewer = await requireViewerForLocalizedPage(locale, '/admin');
 
   const runtime = getPlatformRuntime();
   const [dictionary, campaigns, paymentOrders] = await Promise.all([

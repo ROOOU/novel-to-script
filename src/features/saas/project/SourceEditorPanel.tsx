@@ -22,7 +22,7 @@ interface SourceEditorPanelProps {
   message: string | null;
   saving: boolean;
   runningKind: string | null;
-  canGenerateStoryboard: boolean;
+  pipelineActionLabel?: string;
   onSourceTitleChange: (value: string) => void;
   onSourceTextChange: (value: string) => void;
   onGenreChange: (value: string) => void;
@@ -31,7 +31,7 @@ interface SourceEditorPanelProps {
   onStyleChange: (value: string) => void;
   onSaveSource: () => void;
   onRunScript: () => void;
-  onRunStoryboard: () => void;
+  onRunPipeline: () => void;
 }
 
 export function SourceEditorPanel({
@@ -45,7 +45,7 @@ export function SourceEditorPanel({
   message,
   saving,
   runningKind,
-  canGenerateStoryboard,
+  pipelineActionLabel,
   onSourceTitleChange,
   onSourceTextChange,
   onGenreChange,
@@ -54,7 +54,7 @@ export function SourceEditorPanel({
   onStyleChange,
   onSaveSource,
   onRunScript,
-  onRunStoryboard,
+  onRunPipeline,
 }: SourceEditorPanelProps) {
   return (
     <article className="card stack-gap">
@@ -107,8 +107,8 @@ export function SourceEditorPanel({
         <button type="button" className="primary-button" onClick={onRunScript} disabled={runningKind === 'script' || !sourceText.trim()}>
           {labels.generateScript}
         </button>
-        <button type="button" className="secondary-button" onClick={onRunStoryboard} disabled={runningKind === 'storyboard' || !canGenerateStoryboard}>
-          {labels.generateStoryboard}
+        <button type="button" className="secondary-button" onClick={onRunPipeline} disabled={runningKind === 'pipeline' || !sourceText.trim()}>
+          {pipelineActionLabel ?? labels.generateStoryboard}
         </button>
       </div>
       {message ? <p className="helper-text">{message}</p> : null}

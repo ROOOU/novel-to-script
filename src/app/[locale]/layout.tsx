@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { AppShellHeader } from '@/components/AppShellHeader';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { SUPPORTED_LOCALES, isSupportedLocale } from '@/i18n/config';
-import { getCurrentViewer } from '@/server/auth/service';
+import { resolveViewerSafely } from '@/server/auth/http';
 
 export async function generateStaticParams() {
   return SUPPORTED_LOCALES.map((locale) => ({ locale }));
@@ -37,7 +37,7 @@ export default async function LocaleLayout({
 
   const [dictionary, viewer] = await Promise.all([
     getDictionary(locale),
-    getCurrentViewer(),
+    resolveViewerSafely(),
   ]);
 
   return (
@@ -48,6 +48,7 @@ export default async function LocaleLayout({
         labels={{
           brandBadge: dictionary.common.brandBadge,
           signIn: dictionary.common.signIn,
+          signUp: dictionary.common.signUp,
           signOut: dictionary.common.signOut,
           home: dictionary.nav.home,
           pricing: dictionary.nav.pricing,
@@ -56,6 +57,8 @@ export default async function LocaleLayout({
           redeem: dictionary.nav.redeem,
           admin: dictionary.nav.admin,
         }}
+        userDisplayName={viewer?.user.displayName}
+        initialCredits={viewer?.creditAccount?.availableCredits ?? null}
       />
       <main>{children}</main>
     </>

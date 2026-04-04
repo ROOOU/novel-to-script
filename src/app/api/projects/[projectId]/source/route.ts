@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { saveProjectSource } from '@/server/projects/service';
-import { requireViewerResponse } from '@/server/auth/http';
-import { getPlatformRuntime } from '@/server/shared/platform';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import {
+  applyPlatformResponseHeaders,
+  getPlatformRuntime,
+} from '@/server/shared/platform';
 
 const sourceSchema = z.object({
   title: z.string().min(1),
@@ -13,7 +16,7 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ projectId: string }> }
 ) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -22,12 +25,15 @@ export async function POST(
   const runtime = getPlatformRuntime();
   const project = await runtime.projects.getById(projectId);
   if (!project || project.organizationId !== viewer.organization.id) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'PROJECT_NOT_FOUND',
-      },
-      { status: 404 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: 'PROJECT_NOT_FOUND',
+        },
+        { status: 404 }
+      ),
+      context
     );
   }
 
@@ -41,8 +47,11 @@ export async function POST(
     textContent: body.textContent,
   });
 
-  return NextResponse.json({
-    ok: true,
-    sourceDocument,
-  });
+  return applyPlatformResponseHeaders(
+    NextResponse.json({
+      ok: true,
+      sourceDocument,
+    }),
+    context
+  );
 }

@@ -3,11 +3,9 @@ import {
   applyPlatformResponseHeaders,
   GENERATION_ACCESS_TOKEN_HEADER,
   getPlatformRuntime,
-  getPlanHeaderDefault,
-  resolvePlatformRequestContext,
   resolveGenerationAccessToken,
 } from '@/server/shared/platform';
-import { getCurrentViewer } from '@/server/auth/service';
+import { resolveOptionalViewerPlatformContext } from '@/server/auth/http';
 
 export async function GET(
   request: NextRequest,
@@ -15,9 +13,7 @@ export async function GET(
 ) {
   const { id } = await params;
   const runtime = getPlatformRuntime();
-  const context = resolvePlatformRequestContext(request, {
-    defaultPlan: getPlanHeaderDefault(request),
-  });
+  const { viewer, context } = await resolveOptionalViewerPlatformContext(request);
   const job = await runtime.generationJobs.getById(id);
 
   if (!job) {
@@ -31,7 +27,6 @@ export async function GET(
   }
 
   const accessToken = resolveGenerationAccessToken(request);
-  const viewer = await getCurrentViewer();
   const canReadWithSession = viewer?.organization.id === job.organizationId;
   if (!canReadWithSession && !runtime.generationJobAccess.verify(job.id, accessToken)) {
     return applyPlatformResponseHeaders(new Response(

@@ -1,6 +1,6 @@
 import { PricingClient } from '@/features/saas/PricingClient';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { CREDIT_PACK_CATALOG, PLAN_CATALOG } from '@/server/billing/catalog';
+import { CREDIT_PACK_CATALOG_ENTRIES, PLAN_CATALOG_ENTRIES } from '@/server/billing/catalog';
 
 export default async function PricingPage({
   params,
@@ -9,14 +9,12 @@ export default async function PricingPage({
 }) {
   const { locale } = await params;
   const dictionary = await getDictionary(locale);
-  const initialCurrency = locale === 'en-US' ? 'USD' : 'CNY';
 
   return (
     <PricingClient
       locale={locale === 'en-US' ? 'en-US' : 'zh-CN'}
-      initialCurrency={initialCurrency}
-      plans={Object.values(PLAN_CATALOG)}
-      creditPacks={Object.values(CREDIT_PACK_CATALOG)}
+      plans={PLAN_CATALOG_ENTRIES}
+      creditPacks={CREDIT_PACK_CATALOG_ENTRIES}
       labels={dictionary.pricingPage}
     />
   );

@@ -3,11 +3,10 @@
 import { startTransition, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { CreditPackCatalogEntry, PlanCatalogEntry } from '@/server/billing/catalog';
-import type { SupportedCurrency, SupportedLocale } from '@/server/shared/platform/domain';
+import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 interface PricingClientProps {
   locale: SupportedLocale;
-  initialCurrency: SupportedCurrency;
   plans: PlanCatalogEntry[];
   creditPacks: CreditPackCatalogEntry[];
   labels: {
@@ -23,45 +22,76 @@ interface PricingClientProps {
 
 export function PricingClient({
   locale,
-  initialCurrency,
   plans,
   creditPacks,
   labels,
 }: PricingClientProps) {
   const router = useRouter();
-  const [currency, setCurrency] = useState<SupportedCurrency>(initialCurrency);
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const currency = 'USD' as const;
   const localeKey = locale === 'en-US' ? 'en-US' : 'zh-CN';
 
   async function handleCheckout(payload: {
     purchaseKind: 'subscription' | 'credit-pack';
     planKey?: string;
     creditPackKey?: string;
+    skipCheckout?: boolean;
   }) {
-    const key = `${payload.purchaseKind}:${payload.planKey ?? payload.creditPackKey ?? 'unknown'}`;
-    setBusyKey(key);
-    const response = await fetch('/api/billing/checkout-session', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        ...payload,
-        currency,
-      }),
-    });
-    const result = await response.json();
-    setBusyKey(null);
-
-    if (result.checkout?.mode === 'stripe' && result.checkout?.url) {
-      window.location.href = result.checkout.url;
+    if (payload.skipCheckout) {
+      startTransition(() => {
+        router.push(`/${locale}/projects`);
+      });
       return;
     }
 
-    startTransition(() => {
-      router.push(`/${locale}/billing`);
-      router.refresh();
-    });
+    const key = `${payload.purchaseKind}:${payload.planKey ?? payload.creditPackKey ?? 'unknown'}`;
+    setBusyKey(key);
+    setMessage(null);
+    try {
+      const response = await fetch(resolvePayPalPurchaseEndpoint(payload.purchaseKind), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...(payload.purchaseKind === 'subscription'
+            ? { planKey: payload.planKey, requestedCurrency: 'USD' }
+            : { creditPackKey: payload.creditPackKey, requestedCurrency: 'USD' }),
+        }),
+      });
+      let result: Record<string, unknown> | null = null;
+      try {
+        result = (await response.json()) as Record<string, unknown>;
+      } catch {
+        result = null;
+      }
+
+      if (!response.ok || !result || result.ok !== true) {
+        if (response.status === 401) {
+          redirectToCanonicalSignIn(locale);
+          return;
+        }
+
+        setMessage(resolvePricingErrorMessage(result, locale));
+        return;
+      }
+
+      const checkoutUrl = resolveCheckoutUrl(result);
+      if (checkoutUrl) {
+        window.location.assign(checkoutUrl);
+        return;
+      }
+
+      startTransition(() => {
+        router.push(`/${locale}/billing`);
+        router.refresh();
+      });
+    } catch {
+      setMessage(getDefaultPricingError(locale));
+    } finally {
+      setBusyKey(null);
+    }
   }
 
   return (
@@ -70,24 +100,17 @@ export function PricingClient({
         <span className="eyebrow">{labels.title}</span>
         <h1>{labels.subtitle}</h1>
         <p>{labels.billingHint}</p>
-        <div className="segmented-control">
-          {(['CNY', 'USD'] as SupportedCurrency[]).map((nextCurrency) => (
-            <button
-              key={nextCurrency}
-              type="button"
-              className={`segment ${currency === nextCurrency ? 'active' : ''}`}
-              onClick={() => setCurrency(nextCurrency)}
-            >
-              {nextCurrency}
-            </button>
-          ))}
-        </div>
+        <p className="helper-text">{labels.manualHint}</p>
+        {message ? <p className="error-message">{message}</p> : null}
       </section>
 
       <section className="pricing-grid">
         {plans.map((plan) => (
           <article key={plan.key} className="pricing-card">
-            <h2>{plan.name[localeKey]}</h2>
+            <div className="list-row">
+              <h2>{plan.name[localeKey]}</h2>
+              <span className="chip">PayPal</span>
+            </div>
             <p>{plan.description[localeKey]}</p>
             <strong className="price-tag">
               {formatMoney(plan.prices[currency].amountCents, currency)}
@@ -97,10 +120,16 @@ export function PricingClient({
             <button
               type="button"
               className="primary-button"
-              onClick={() => handleCheckout({ purchaseKind: 'subscription', planKey: plan.key })}
+              onClick={() =>
+                handleCheckout({
+                  purchaseKind: 'subscription',
+                  planKey: plan.key,
+                  skipCheckout: plan.prices[currency].amountCents === 0,
+                })
+              }
               disabled={busyKey === `subscription:${plan.key}`}
             >
-              {labels.subscribe}
+              {plan.prices[currency].amountCents === 0 ? getFreePlanActionLabel(locale) : `${labels.subscribe} · PayPal`}
             </button>
           </article>
         ))}
@@ -111,7 +140,10 @@ export function PricingClient({
         <div className="pricing-grid compact">
           {creditPacks.map((pack) => (
             <article key={pack.key} className="pricing-card">
-              <h3>{pack.credits} credits</h3>
+              <div className="list-row">
+                <h3>{pack.credits} credits</h3>
+                <span className="chip">PayPal</span>
+              </div>
               <strong className="price-tag">{formatMoney(pack.prices[currency].amountCents, currency)}</strong>
               <button
                 type="button"
@@ -119,21 +151,79 @@ export function PricingClient({
                 onClick={() => handleCheckout({ purchaseKind: 'credit-pack', creditPackKey: pack.key })}
                 disabled={busyKey === `credit-pack:${pack.key}`}
               >
-                {labels.buyCredits}
+                {`${labels.buyCredits} · PayPal`}
               </button>
             </article>
           ))}
         </div>
-        <p className="helper-text">{labels.manualHint}</p>
       </section>
     </div>
   );
 }
 
-function formatMoney(amountCents: number, currency: SupportedCurrency): string {
-  return new Intl.NumberFormat(currency === 'USD' ? 'en-US' : 'zh-CN', {
+function formatMoney(amountCents: number, currency: string): string {
+  return new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency,
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(amountCents / 100);
+}
+
+function getFreePlanActionLabel(locale: SupportedLocale) {
+  return locale === 'en-US' ? 'Start free' : '开始免费使用';
+}
+
+function getDefaultPricingError(locale: SupportedLocale) {
+  return locale === 'en-US' ? 'Unable to start checkout.' : '暂时无法发起结账。';
+}
+
+function resolvePricingErrorMessage(result: Record<string, unknown> | null, locale: SupportedLocale) {
+  if (!result) {
+    return getDefaultPricingError(locale);
+  }
+
+  const errorValue = result.error;
+  if (typeof errorValue === 'string' && errorValue.trim().length > 0) {
+    return errorValue;
+  }
+
+  return getDefaultPricingError(locale);
+}
+
+function resolveCheckoutUrl(result: Record<string, unknown>) {
+  const checkout = result.checkout;
+  if (!checkout || typeof checkout !== 'object') {
+    return null;
+  }
+
+  const checkoutRecord = checkout as Record<string, unknown>;
+  const url = checkoutRecord.url;
+  if (typeof url === 'string' && url.length > 0) {
+    return url;
+  }
+
+  const approvalUrl = checkoutRecord.approvalUrl;
+  if (typeof approvalUrl === 'string' && approvalUrl.length > 0) {
+    return approvalUrl;
+  }
+
+  return null;
+}
+
+function resolvePayPalPurchaseEndpoint(purchaseKind: 'subscription' | 'credit-pack') {
+  return purchaseKind === 'subscription'
+    ? '/api/billing/paypal/create-subscription'
+    : '/api/billing/paypal/create-order';
+}
+
+function redirectToCanonicalSignIn(locale: SupportedLocale) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const baseUrl = configuredAppUrl || window.location.origin;
+  const redirectTarget = new URL(`/${locale}/login`, baseUrl);
+  redirectTarget.searchParams.set('redirect_url', new URL(`/${locale}/pricing`, baseUrl).toString());
+  window.location.assign(redirectTarget.toString());
 }

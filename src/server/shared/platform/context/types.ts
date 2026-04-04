@@ -1,4 +1,4 @@
-export type PlatformPlan = 'free' | 'pro' | 'team' | 'enterprise';
+export type PlatformPlan = 'free' | 'creator' | 'pro';
 
 export type PlatformWorkspaceSource =
   | 'header'
@@ -30,11 +30,21 @@ export interface PlatformRequestContext extends PlatformRequestIdentity, Platfor
   plan: PlatformPlan;
 }
 
+export interface PlatformRequestViewerDefaults {
+  userId?: string | null;
+  sessionId?: string | null;
+  organizationId?: string | null;
+  workspaceId?: string | null;
+  projectId?: string | null;
+  plan?: PlatformPlan | null;
+}
+
 export interface PlatformRequestContextOptions {
   defaultWorkspaceId?: string | null;
   defaultOrganizationId?: string | null;
   defaultProjectId?: string | null;
   defaultPlan?: PlatformPlan;
+  viewerDefaults?: PlatformRequestViewerDefaults;
 }
 
 export interface PlatformRequestLike {

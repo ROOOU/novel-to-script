@@ -1,5 +1,5 @@
 import { getPlatformRuntime } from '@/server/shared/platform';
-import type { GenerationArtifactFormat } from '@/server/shared/platform/domain';
+import type { GenerationArtifact, GenerationArtifactFormat, GenerationJob } from '@/server/shared/platform/domain';
 import { getProjectBundle } from './service';
 
 export type ProjectExportFormatKey = 'markdown' | 'json' | 'text';
@@ -60,8 +60,9 @@ export async function createProjectExportArtifact(input: {
     metadata: {
       exportFormat: input.format,
       downloadFilename: `${bundle.project.slug}-export.${exportPayload.extension}`,
-      includedArtifactIds: bundle.artifacts.map((artifactEntry) => artifactEntry.id),
-      includedJobIds: bundle.jobs.map((job) => job.id),
+      includedArtifactIds: bundle.artifacts.map((artifactEntry: GenerationArtifact) => artifactEntry.id),
+      includedArtifactRelationIds: bundle.artifactRelations.map((relation) => relation.id),
+      includedJobIds: bundle.jobs.map((job: GenerationJob) => job.id),
       exportedAt: new Date().toISOString(),
     },
     createdByUserId: input.userId,
@@ -107,6 +108,7 @@ export function buildProjectExportPayload(
             sourceDocuments: bundle.sourceDocuments,
             jobs: bundle.jobs,
             artifacts: bundle.artifacts,
+            artifactRelations: bundle.artifactRelations,
           },
           null,
           2
@@ -169,6 +171,17 @@ function buildMarkdownExport(
     parts.push('');
   }
 
+  parts.push('## Artifact Relations', '');
+  if (bundle.artifactRelations.length === 0) {
+    parts.push('- None');
+  } else {
+    for (const relation of bundle.artifactRelations) {
+      parts.push(
+        `- ${relation.relationType}: ${relation.upstreamArtifactId} -> ${relation.downstreamArtifactId} (${relation.id})`
+      );
+    }
+  }
+
   return parts.join('\n');
 }
 
@@ -201,6 +214,17 @@ function buildPlainTextExport(
     parts.push('');
     parts.push(`[${artifact.kind} v${artifact.version}] ${artifact.title}`);
     parts.push(artifact.content ?? '');
+  }
+
+  parts.push('', 'ARTIFACT RELATIONS');
+  if (bundle.artifactRelations.length === 0) {
+    parts.push('None');
+  } else {
+    for (const relation of bundle.artifactRelations) {
+      parts.push(
+        `${relation.relationType} | ${relation.upstreamArtifactId} -> ${relation.downstreamArtifactId} | ${relation.id}`
+      );
+    }
   }
 
   return parts.join('\n');

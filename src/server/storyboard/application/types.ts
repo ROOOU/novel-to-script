@@ -1,10 +1,13 @@
 import type { LLMConfig } from '@/lib/llm';
-import type { StoryboardGenerateRequest, StoryboardGenerationEvent } from '@/features/storyboard/contracts';
+import type {
+  StoryboardGenerateRequestV2,
+  StoryboardGenerationEvent,
+} from '@/features/storyboard/contracts';
 import type { PlatformRequestContext, PlatformUsageEvent, UsageMeter } from '@/server/shared/platform';
 import type { SSESender } from '@/server/shared/sse';
 
 export interface StoryboardGenerationExecutionOptions {
-  body: StoryboardGenerateRequest;
+  body: StoryboardGenerateRequestV2;
   context: PlatformRequestContext;
   jobId?: string | null;
   send: SSESender<StoryboardGenerationEvent>;

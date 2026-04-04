@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { requireViewerResponse } from '@/server/auth/http';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import { applyPlatformResponseHeaders } from '@/server/shared/platform';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 const createCampaignSchema = z.object({
@@ -14,7 +15,7 @@ const createCampaignSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -33,8 +34,11 @@ export async function POST(request: NextRequest) {
     createdByUserId: viewer.user.id,
   });
 
-  return NextResponse.json({
-    ok: true,
-    campaign,
-  });
+  return applyPlatformResponseHeaders(
+    NextResponse.json({
+      ok: true,
+      campaign,
+    }),
+    context
+  );
 }

@@ -1,13 +1,13 @@
-import { NextResponse } from 'next/server';
-import { requireViewerResponse } from '@/server/auth/http';
-import { getPlatformRuntime } from '@/server/shared/platform';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireViewerPlatformContext } from '@/server/auth/http';
+import { applyPlatformResponseHeaders, getPlatformRuntime } from '@/server/shared/platform';
 import type { GenerationArtifactFormat } from '@/server/shared/platform/domain';
 
 export async function GET(
-  _request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ artifactId: string }> }
 ) {
-  const { viewer, response } = await requireViewerResponse();
+  const { viewer, context, response } = await requireViewerPlatformContext(request);
   if (response || !viewer) {
     return response;
   }
@@ -16,23 +16,29 @@ export async function GET(
   const runtime = getPlatformRuntime();
   const artifact = await runtime.generationArtifacts.getById(artifactId);
   if (!artifact || artifact.organizationId !== viewer.organization.id) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'ARTIFACT_NOT_FOUND',
-      },
-      { status: 404 }
+    return applyPlatformResponseHeaders(
+      NextResponse.json(
+        {
+          ok: false,
+          error: 'ARTIFACT_NOT_FOUND',
+        },
+        { status: 404 }
+      ),
+      context
     );
   }
 
   const filename = resolveArtifactFilename(artifact.title, artifact.format, artifact.metadata?.downloadFilename);
 
-  return new NextResponse(artifact.content ?? '', {
-    headers: {
-      'Content-Type': `${artifact.format}; charset=utf-8`,
-      'Content-Disposition': `attachment; filename="${filename}"`,
-    },
-  });
+  return applyPlatformResponseHeaders(
+    new NextResponse(artifact.content ?? '', {
+      headers: {
+        'Content-Type': `${artifact.format}; charset=utf-8`,
+        'Content-Disposition': `attachment; filename="${filename}"`,
+      },
+    }),
+    context
+  );
 }
 
 function resolveArtifactFilename(

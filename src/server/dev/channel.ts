@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCurrentViewer } from '@/server/auth/service';
+import { requireViewerResponse } from '@/server/auth/http';
 
 interface DeveloperEnv {
   NODE_ENV?: string;
@@ -8,17 +8,11 @@ interface DeveloperEnv {
 }
 
 export async function requireDeveloperChannelResponse() {
-  const viewer = await getCurrentViewer();
-  if (!viewer) {
+  const { viewer, response } = await requireViewerResponse();
+  if (!viewer || response) {
     return {
       viewer: null,
-      response: NextResponse.json(
-        {
-          ok: false,
-          error: 'UNAUTHORIZED',
-        },
-        { status: 401 }
-      ),
+      response,
     };
   }
 

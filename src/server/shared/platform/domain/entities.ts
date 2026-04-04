@@ -9,8 +9,8 @@ export type Timestamp = string;
 export type Slug = string;
 
 export type SupportedLocale = 'zh-CN' | 'en-US';
-export type SupportedCurrency = 'CNY' | 'USD';
-export type PricingRegion = 'cn' | 'global';
+export type SupportedCurrency = 'USD';
+export type PricingRegion = 'global';
 
 export type WorkspaceRole = 'owner' | 'admin' | 'editor' | 'viewer';
 export type UserStatus = 'active' | 'invited' | 'suspended' | 'deleted';
@@ -70,9 +70,10 @@ export type SubscriptionStatus =
   | 'canceled'
   | 'expired';
 export type BillingInterval = 'monthly' | 'annual';
-export type SubscriptionProvider = 'stripe' | 'manual' | 'internal';
-export type BillingProvider = 'stripe' | 'manual';
+export type SubscriptionProvider = 'paypal' | 'internal';
+export type BillingProvider = 'paypal' | 'internal';
 export type PurchaseKind = 'subscription' | 'credit-pack';
+export type ArtifactRelationType = 'derived_from';
 export type PaymentOrderStatus =
   | 'draft'
   | 'pending'
@@ -103,11 +104,15 @@ export interface User extends AuditFields {
   id: EntityId;
   email: string;
   displayName: string;
+  authProvider?: 'clerk' | null;
+  authUserId?: string | null;
   passwordHash?: string | null;
   avatarUrl?: string | null;
   preferredLocale?: SupportedLocale;
   defaultOrganizationId?: EntityId | null;
   status: UserStatus;
+  emailVerifiedAt?: Timestamp | null;
+  lastAuthSyncAt?: Timestamp | null;
   lastLoginAt?: Timestamp | null;
 }
 
@@ -209,6 +214,15 @@ export interface GenerationArtifact extends AuditFields {
   metadata?: Record<string, unknown>;
 }
 
+export interface ArtifactRelation extends AuditFields {
+  id: EntityId;
+  projectId: EntityId;
+  upstreamArtifactId: EntityId;
+  downstreamArtifactId: EntityId;
+  relationType: ArtifactRelationType;
+  metadata?: Record<string, unknown>;
+}
+
 export interface UsageEvent extends AuditFields {
   id: EntityId;
   organizationId: EntityId;
@@ -260,7 +274,6 @@ export interface Subscription extends AuditFields {
   currency?: SupportedCurrency | null;
   trialEndsAt?: Timestamp | null;
   canceledAt?: Timestamp | null;
-  portalManagementEnabled?: boolean;
 }
 
 export interface PaymentOrder extends AuditFields {
@@ -275,7 +288,7 @@ export interface PaymentOrder extends AuditFields {
   amountCents: number;
   currency: SupportedCurrency;
   creditsGranted?: number | null;
-  checkoutSessionId?: string | null;
+  providerOrderId?: string | null;
   providerCustomerId?: string | null;
   providerSubscriptionId?: string | null;
   paidAt?: Timestamp | null;
@@ -345,21 +358,29 @@ export interface RedeemCodeRedemption extends AuditFields {
 export interface CreateUserInput {
   email: string;
   displayName: string;
+  authProvider?: 'clerk' | null;
+  authUserId?: string | null;
   passwordHash?: string | null;
   avatarUrl?: string | null;
   preferredLocale?: SupportedLocale;
   defaultOrganizationId?: EntityId | null;
   status?: UserStatus;
+  emailVerifiedAt?: Timestamp | null;
+  lastAuthSyncAt?: Timestamp | null;
   createdByUserId?: EntityId | null;
 }
 
 export interface UpdateUserInput {
   displayName?: string;
+  authProvider?: 'clerk' | null;
+  authUserId?: string | null;
   passwordHash?: string | null;
   avatarUrl?: string | null;
   preferredLocale?: SupportedLocale;
   defaultOrganizationId?: EntityId | null;
   status?: UserStatus;
+  emailVerifiedAt?: Timestamp | null;
+  lastAuthSyncAt?: Timestamp | null;
   lastLoginAt?: Timestamp | null;
   updatedByUserId?: EntityId | null;
 }
@@ -518,6 +539,15 @@ export interface UpdateGenerationArtifactInput {
   updatedByUserId?: EntityId | null;
 }
 
+export interface CreateArtifactRelationInput {
+  projectId: EntityId;
+  upstreamArtifactId: EntityId;
+  downstreamArtifactId: EntityId;
+  relationType?: ArtifactRelationType;
+  metadata?: Record<string, unknown>;
+  createdByUserId?: EntityId | null;
+}
+
 export interface CreateUsageEventInput {
   organizationId: EntityId;
   workspaceId?: EntityId | null;
@@ -554,7 +584,6 @@ export interface CreateSubscriptionInput {
   currency?: SupportedCurrency | null;
   trialEndsAt?: Timestamp | null;
   canceledAt?: Timestamp | null;
-  portalManagementEnabled?: boolean;
   createdByUserId?: EntityId | null;
 }
 
@@ -575,7 +604,6 @@ export interface UpdateSubscriptionInput {
   currency?: SupportedCurrency | null;
   trialEndsAt?: Timestamp | null;
   canceledAt?: Timestamp | null;
-  portalManagementEnabled?: boolean;
   updatedByUserId?: EntityId | null;
 }
 
@@ -590,7 +618,7 @@ export interface CreatePaymentOrderInput {
   amountCents: number;
   currency: SupportedCurrency;
   creditsGranted?: number | null;
-  checkoutSessionId?: string | null;
+  providerOrderId?: string | null;
   providerCustomerId?: string | null;
   providerSubscriptionId?: string | null;
   paidAt?: Timestamp | null;
@@ -606,7 +634,7 @@ export interface UpdatePaymentOrderInput {
   amountCents?: number;
   currency?: SupportedCurrency;
   creditsGranted?: number | null;
-  checkoutSessionId?: string | null;
+  providerOrderId?: string | null;
   providerCustomerId?: string | null;
   providerSubscriptionId?: string | null;
   paidAt?: Timestamp | null;

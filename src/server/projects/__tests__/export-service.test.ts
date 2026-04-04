@@ -63,6 +63,17 @@ const bundle = {
       updatedAt: '2026-03-23T00:00:00.000Z',
     },
   ],
+  artifactRelations: [
+    {
+      id: 'relation_1',
+      projectId: 'proj_1',
+      upstreamArtifactId: 'artifact_0',
+      downstreamArtifactId: 'artifact_1',
+      relationType: 'derived_from' as const,
+      createdAt: '2026-03-23T00:00:00.000Z',
+      updatedAt: '2026-03-23T00:00:00.000Z',
+    },
+  ],
 };
 
 const bundleWithInsights = {
@@ -93,6 +104,11 @@ describe('buildProjectExportPayload', () => {
           title: 'Episode 1',
         },
       ],
+      artifactRelations: [
+        {
+          id: 'relation_1',
+        },
+      ],
     });
   });
 
@@ -102,5 +118,7 @@ describe('buildProjectExportPayload', () => {
     expect(payload.extension).toBe('txt');
     expect(payload.content).toContain('SOURCE DOCUMENTS');
     expect(payload.content).toContain('[script v1] Episode 1');
+    expect(payload.content).toContain('ARTIFACT RELATIONS');
+    expect(payload.content).toContain('artifact_0 -> artifact_1');
   });
 });

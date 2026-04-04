@@ -2,32 +2,20 @@ import type { PlatformEntitlementSet, PlatformFeatureKey } from './types';
 import type { PlatformPlan } from '../context';
 
 const BASE_FEATURES: readonly PlatformFeatureKey[] = ['script-generation', 'storyboard-generation'];
-const PRO_PLUS_FEATURES: readonly PlatformFeatureKey[] = [
+const CREATOR_FEATURES: readonly PlatformFeatureKey[] = [
   ...BASE_FEATURES,
   'project-history',
-  'branding-export',
-  'api-access',
 ];
-const TEAM_FEATURES: readonly PlatformFeatureKey[] = [
-  ...PRO_PLUS_FEATURES,
-  'workspace-sharing',
-  'team-collaboration',
-  'audit-log',
-  'priority-queue',
-];
-const ENTERPRISE_FEATURES: readonly PlatformFeatureKey[] = [
-  ...TEAM_FEATURES,
-  'custom-model',
-];
+const PRO_FEATURES: readonly PlatformFeatureKey[] = [...CREATOR_FEATURES, 'branding-export'];
 
 export function getPlanEntitlements(plan: PlatformPlan): PlatformEntitlementSet {
   switch (plan) {
-    case 'pro':
+    case 'creator':
       return {
         plan,
-        features: PRO_PLUS_FEATURES,
+        features: CREATOR_FEATURES,
         maxWorkspaces: 1,
-        maxProjectsPerWorkspace: 20,
+        maxProjectsPerWorkspace: 15,
         maxConcurrentJobs: 2,
         maxMonthlyGenerations: 200,
         maxInputCharacters: 80_000,
@@ -35,43 +23,26 @@ export function getPlanEntitlements(plan: PlatformPlan): PlatformEntitlementSet 
         maxTeamMembers: 1,
         allowBrandingRemoval: false,
         allowCustomModel: false,
-        allowApiAccess: true,
+        allowApiAccess: false,
         allowAuditLog: false,
         allowPriorityQueue: false,
       };
-    case 'team':
+    case 'pro':
       return {
         plan,
-        features: TEAM_FEATURES,
-        maxWorkspaces: 10,
-        maxProjectsPerWorkspace: 100,
-        maxConcurrentJobs: 5,
-        maxMonthlyGenerations: 1_000,
+        features: PRO_FEATURES,
+        maxWorkspaces: 1,
+        maxProjectsPerWorkspace: Number.POSITIVE_INFINITY,
+        maxConcurrentJobs: 3,
+        maxMonthlyGenerations: 600,
         maxInputCharacters: 200_000,
         maxEpisodeCount: 20,
-        maxTeamMembers: 20,
-        allowBrandingRemoval: true,
+        maxTeamMembers: 1,
+        allowBrandingRemoval: false,
         allowCustomModel: false,
-        allowApiAccess: true,
-        allowAuditLog: true,
-        allowPriorityQueue: true,
-      };
-    case 'enterprise':
-      return {
-        plan,
-        features: ENTERPRISE_FEATURES,
-        maxWorkspaces: Number.POSITIVE_INFINITY,
-        maxProjectsPerWorkspace: Number.POSITIVE_INFINITY,
-        maxConcurrentJobs: Number.POSITIVE_INFINITY,
-        maxMonthlyGenerations: Number.POSITIVE_INFINITY,
-        maxInputCharacters: Number.POSITIVE_INFINITY,
-        maxEpisodeCount: Number.POSITIVE_INFINITY,
-        maxTeamMembers: Number.POSITIVE_INFINITY,
-        allowBrandingRemoval: true,
-        allowCustomModel: true,
-        allowApiAccess: true,
-        allowAuditLog: true,
-        allowPriorityQueue: true,
+        allowApiAccess: false,
+        allowAuditLog: false,
+        allowPriorityQueue: false,
       };
     case 'free':
     default:
@@ -79,9 +50,9 @@ export function getPlanEntitlements(plan: PlatformPlan): PlatformEntitlementSet 
         plan: 'free',
         features: BASE_FEATURES,
         maxWorkspaces: 1,
-        maxProjectsPerWorkspace: 3,
+        maxProjectsPerWorkspace: 2,
         maxConcurrentJobs: 1,
-        maxMonthlyGenerations: 20,
+        maxMonthlyGenerations: 30,
         maxInputCharacters: 15_000,
         maxEpisodeCount: 5,
         maxTeamMembers: 1,

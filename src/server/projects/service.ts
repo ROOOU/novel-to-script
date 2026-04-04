@@ -1,6 +1,12 @@
 import { slugify } from '@/lib/slug';
 import { countChineseWords } from '@/lib/preprocessor';
-import { getPlatformRuntime } from '@/server/shared/platform';
+import {
+  getPlatformRuntime,
+  type ArtifactRelation,
+  type GenerationArtifact,
+  type GenerationJob,
+  type SourceDocument,
+} from '@/server/shared/platform';
 import { buildProjectArtifactInsights } from './insights';
 
 export async function createProject(input: {
@@ -81,17 +87,19 @@ export async function getProjectBundle(projectId: string) {
     return null;
   }
 
-  const [sourceDocuments, jobs, artifacts] = await Promise.all([
+  const [sourceDocuments, jobs, artifacts, artifactRelations] = await Promise.all([
     runtime.sourceDocuments.listByProjectId(projectId),
     runtime.generationJobs.listByProjectId(projectId),
     runtime.generationArtifacts.listByProjectId(projectId),
+    runtime.artifactRelations.listByProjectId(projectId),
   ]);
 
   return {
     project,
-    sourceDocuments: sourceDocuments.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-    jobs: jobs.sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
-    artifacts: artifacts.sort((left, right) => right.createdAt.localeCompare(left.createdAt)),
+    sourceDocuments: sourceDocuments.sort((left: SourceDocument, right: SourceDocument) => right.updatedAt.localeCompare(left.updatedAt)),
+    jobs: jobs.sort((left: GenerationJob, right: GenerationJob) => right.createdAt.localeCompare(left.createdAt)),
+    artifacts: artifacts.sort((left: GenerationArtifact, right: GenerationArtifact) => right.createdAt.localeCompare(left.createdAt)),
+    artifactRelations: artifactRelations.sort((left: ArtifactRelation, right: ArtifactRelation) => right.createdAt.localeCompare(left.createdAt)),
     insights: buildProjectArtifactInsights(artifacts),
   };
 }

@@ -1,7 +1,7 @@
-import { notFound, redirect } from 'next/navigation';
+import { notFound } from 'next/navigation';
 import { ProjectWorkspaceClient } from '@/features/saas/ProjectWorkspaceClient';
 import { getDictionary } from '@/i18n/get-dictionary';
-import { getCurrentViewer } from '@/server/auth/service';
+import { requireViewerForLocalizedPage } from '@/server/auth/http';
 import { getProjectBundle } from '@/server/projects/service';
 
 export default async function ProjectDetailPage({
@@ -10,10 +10,7 @@ export default async function ProjectDetailPage({
   params: Promise<{ locale: string; projectId: string }>;
 }) {
   const { locale, projectId } = await params;
-  const viewer = await getCurrentViewer();
-  if (!viewer) {
-    redirect(`/${locale}/login`);
-  }
+  const viewer = await requireViewerForLocalizedPage(locale, `/projects/${projectId}`);
 
   const [dictionary, bundle] = await Promise.all([
     getDictionary(locale),
@@ -34,6 +31,7 @@ export default async function ProjectDetailPage({
       initialSourceText={sourceDocument?.textContent ?? ''}
       jobs={bundle.jobs}
       artifacts={bundle.artifacts}
+      artifactRelations={bundle.artifactRelations}
       labels={{
         ...dictionary.projectDetail,
         backToProjects: dictionary.common.backToProjects,

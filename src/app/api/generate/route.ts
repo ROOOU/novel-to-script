@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { checkRateLimit, createRateLimitResponse } from '@/lib/rate-limit';
+import { requireViewerPlatformContext } from '@/server/auth/http';
 import {
   type ScriptGenerationEvent,
   type ScriptGenerationRequest,
@@ -14,9 +15,7 @@ import {
   evaluatePlatformFeatureAccess,
   evaluateUsagePreflight,
   getPlatformRuntime,
-  getPlanHeaderDefault,
   getUsageBudgetFromEntitlements,
-  resolvePlatformRequestContext,
   resolveRuntimeOrganizationId,
   resolveRuntimeProjectId,
   resolveRuntimeWorkspaceId,
@@ -30,9 +29,10 @@ export async function POST(request: NextRequest) {
     return createRateLimitResponse(rateLimit);
   }
 
-  const platformContext = resolvePlatformRequestContext(request, {
-    defaultPlan: getPlanHeaderDefault(request),
-  });
+  const { context: platformContext, response } = await requireViewerPlatformContext(request);
+  if (response) {
+    return response;
+  }
 
   try {
     const runtime = getPlatformRuntime();

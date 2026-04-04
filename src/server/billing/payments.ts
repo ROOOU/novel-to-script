@@ -1,4 +1,3 @@
-import type Stripe from 'stripe';
 import {
   buildCreditPackPurchase,
   buildSubscriptionPurchase,
@@ -9,9 +8,13 @@ import {
   type PlanKey,
 } from '@/server/billing/catalog';
 import { grantCredits, getOrCreateCreditAccount } from '@/server/billing/service';
-import { getStripeClient, isStripeEnabled } from '@/server/billing/stripe';
+import {
+  capturePayPalOrder,
+  createPayPalOrder,
+  createPayPalSubscription,
+  type PayPalApprovalResult,
+} from '@/server/billing/paypal';
 import { getPlatformRuntime } from '@/server/shared/platform';
-import { readPlatformStore, updatePlatformStore } from '@/server/shared/platform/runtime';
 
 export async function getBillingSummary(organizationId: string) {
   const runtime = getPlatformRuntime();
@@ -30,214 +33,148 @@ export async function getBillingSummary(organizationId: string) {
   };
 }
 
-export async function createCheckoutOrder(input: {
+export async function createSubscriptionCheckout(input: {
   organizationId: string;
   userId: string;
   email: string;
   locale: string;
   origin: string;
-  currency: 'CNY' | 'USD';
-  purchaseKind: 'subscription' | 'credit-pack';
-  planKey?: string;
-  creditPackKey?: string;
+  planKey: PlanKey;
+  requestedCurrency?: string;
 }) {
   const runtime = getPlatformRuntime();
-  const provider = input.currency === 'USD' && isStripeEnabled() ? 'stripe' : 'manual';
-
-  if (input.purchaseKind === 'subscription') {
-    const purchase = buildSubscriptionPurchase(input.planKey as PlanKey, input.currency, provider);
-    const order = await runtime.paymentOrders.create({
-      organizationId: input.organizationId,
-      provider,
-      purchaseKind: 'subscription',
-      planKey: purchase.planKey,
-      amountCents: purchase.amountCents,
-      currency: purchase.currency,
-      creditsGranted: purchase.creditsGranted,
-      createdByUserId: input.userId,
-      metadata: {
-        locale: input.locale,
-      },
-    });
-
-    if (provider === 'manual') {
-      return {
-        order,
-        mode: 'manual' as const,
-      };
-    }
-
-    const plan = getPlanCatalogEntry(input.planKey as PlanKey);
-    const stripe = getStripeClient();
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      success_url: `${input.origin}/billing?checkout=success`,
-      cancel_url: `${input.origin}/pricing?checkout=cancelled`,
-      customer_email: input.email,
-      line_items: [
-        {
-          price_data: {
-            currency: input.currency.toLowerCase(),
-            product_data: {
-              name: plan.name[input.locale === 'en-US' ? 'en-US' : 'zh-CN'],
-              description: plan.description[input.locale === 'en-US' ? 'en-US' : 'zh-CN'],
-            },
-            recurring: {
-              interval: 'month',
-            },
-            unit_amount: purchase.amountCents,
-          },
-          quantity: 1,
-        },
-      ],
-      metadata: {
-        orderId: order.id,
-        organizationId: input.organizationId,
-        purchaseKind: 'subscription',
-        planKey: input.planKey as string,
-        creditsGranted: String(purchase.creditsGranted ?? 0),
-      },
-      subscription_data: {
-        metadata: {
-          orderId: order.id,
-          organizationId: input.organizationId,
-          planKey: input.planKey as string,
-          creditsGranted: String(purchase.creditsGranted ?? 0),
-        },
-      },
-    });
-
-    const updatedOrder = await runtime.paymentOrders.update(order.id, {
-      checkoutSessionId: session.id,
-      updatedByUserId: input.userId,
-    });
-
-    return {
-      order: updatedOrder,
-      mode: 'stripe' as const,
-      url: session.url,
-    };
-  }
-
-  const purchase = buildCreditPackPurchase(input.creditPackKey as CreditPackKey, input.currency, provider);
+  const purchase = buildSubscriptionPurchase(input.planKey, 'USD', 'paypal');
   const order = await runtime.paymentOrders.create({
     organizationId: input.organizationId,
-    provider,
-    purchaseKind: 'credit-pack',
-    creditPackKey: purchase.creditPackKey,
+    provider: 'paypal',
+    purchaseKind: 'subscription',
+    planKey: purchase.planKey,
     amountCents: purchase.amountCents,
     currency: purchase.currency,
     creditsGranted: purchase.creditsGranted,
+    status: 'pending',
+    providerOrderId: null,
+    providerSubscriptionId: null,
     createdByUserId: input.userId,
     metadata: {
       locale: input.locale,
+      requestedCurrency: input.requestedCurrency ?? 'USD',
+      purchaseKind: 'subscription',
     },
   });
 
-  if (provider === 'manual') {
-    return {
-      order,
-      mode: 'manual' as const,
-    };
-  }
-
-  const pack = getCreditPackCatalogEntry(input.creditPackKey as CreditPackKey);
-  const stripe = getStripeClient();
-  const session = await stripe.checkout.sessions.create({
-    mode: 'payment',
-    success_url: `${input.origin}/billing?checkout=success`,
-    cancel_url: `${input.origin}/pricing?checkout=cancelled`,
-    customer_email: input.email,
-    line_items: [
-      {
-        price_data: {
-          currency: input.currency.toLowerCase(),
-          product_data: {
-            name: `${pack.credits} credits`,
-          },
-          unit_amount: purchase.amountCents,
-        },
-        quantity: 1,
+  const approval = await createPayPalSubscriptionWithPlan({
+    orderId: order.id,
+    planKey: input.planKey,
+    email: input.email,
+    origin: input.origin,
+    locale: input.locale,
+  }).catch(async (error) => {
+    await runtime.paymentOrders.update(order.id, {
+      status: 'failed',
+      metadata: {
+        ...order.metadata,
+        payPalError: error instanceof Error ? error.message : 'PAYPAL_SUBSCRIPTION_CREATE_FAILED',
       },
-    ],
-    metadata: {
-      orderId: order.id,
-      organizationId: input.organizationId,
-      purchaseKind: 'credit-pack',
-      creditPackKey: input.creditPackKey as string,
-      creditsGranted: String(pack.credits),
-    },
+      updatedByUserId: input.userId,
+    });
+    throw error;
   });
 
   const updatedOrder = await runtime.paymentOrders.update(order.id, {
-    checkoutSessionId: session.id,
+    status: 'pending',
+    providerOrderId: approval.id,
+    providerSubscriptionId: approval.id,
+    metadata: {
+      ...order.metadata,
+      paypalApprovalUrl: approval.approvalUrl,
+      payPalSubscriptionId: approval.id,
+    },
     updatedByUserId: input.userId,
   });
 
   return {
     order: updatedOrder,
-    mode: 'stripe' as const,
-    url: session.url,
+    approvalUrl: approval.approvalUrl,
+    providerOrderId: approval.id,
+    mode: 'paypal' as const,
   };
 }
 
-export async function createBillingPortalSession(input: {
+export async function createCreditPackCheckout(input: {
   organizationId: string;
+  userId: string;
+  email: string;
+  locale: string;
   origin: string;
+  creditPackKey: CreditPackKey;
+  requestedCurrency?: string;
 }) {
-  if (!isStripeEnabled()) {
-    throw new Error('STRIPE_NOT_CONFIGURED');
-  }
-
   const runtime = getPlatformRuntime();
-  const subscription = await runtime.subscriptions.getCurrentByOrganizationId(input.organizationId);
-  if (!subscription?.providerCustomerId) {
-    throw new Error('STRIPE_CUSTOMER_NOT_FOUND');
-  }
-
-  const stripe = getStripeClient();
-  return stripe.billingPortal.sessions.create({
-    customer: subscription.providerCustomerId,
-    return_url: `${input.origin}/billing`,
+  const purchase = buildCreditPackPurchase(input.creditPackKey, 'USD', 'paypal');
+  const order = await runtime.paymentOrders.create({
+    organizationId: input.organizationId,
+    provider: 'paypal',
+    purchaseKind: 'credit-pack',
+    creditPackKey: purchase.creditPackKey,
+    amountCents: purchase.amountCents,
+    currency: purchase.currency,
+    creditsGranted: purchase.creditsGranted,
+    status: 'pending',
+    providerOrderId: null,
+    providerSubscriptionId: null,
+    createdByUserId: input.userId,
+    metadata: {
+      locale: input.locale,
+      requestedCurrency: input.requestedCurrency ?? 'USD',
+      purchaseKind: 'credit-pack',
+    },
   });
+
+  const approval = await createPayPalOrderWithPaymentOrder({
+    orderId: order.id,
+    purchase,
+    origin: input.origin,
+    locale: input.locale,
+  }).catch(async (error) => {
+    await runtime.paymentOrders.update(order.id, {
+      status: 'failed',
+      metadata: {
+        ...order.metadata,
+        payPalError: error instanceof Error ? error.message : 'PAYPAL_ORDER_CREATE_FAILED',
+      },
+      updatedByUserId: input.userId,
+    });
+    throw error;
+  });
+
+  const updatedOrder = await runtime.paymentOrders.update(order.id, {
+    status: 'pending',
+    providerOrderId: approval.id,
+    metadata: {
+      ...order.metadata,
+      paypalApprovalUrl: approval.approvalUrl,
+      payPalOrderId: approval.id,
+    },
+    updatedByUserId: input.userId,
+  });
+
+  return {
+    order: updatedOrder,
+    approvalUrl: approval.approvalUrl,
+    providerOrderId: approval.id,
+    mode: 'paypal' as const,
+  };
 }
 
-export async function handleStripeWebhook(event: Stripe.Event) {
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const session = event.data.object as Stripe.Checkout.Session;
-      await fulfillStripeCheckoutSession(session);
-      return;
-    }
-    case 'invoice.paid': {
-      const invoice = event.data.object as Stripe.Invoice;
-      await updateSubscriptionStatusByProviderId(getInvoiceSubscriptionId(invoice), 'active');
-      return;
-    }
-    case 'invoice.payment_failed': {
-      const invoice = event.data.object as Stripe.Invoice;
-      await updateSubscriptionStatusByProviderId(getInvoiceSubscriptionId(invoice), 'past_due');
-      return;
-    }
-    case 'customer.subscription.updated': {
-      const subscription = event.data.object as Stripe.Subscription;
-      await updateSubscriptionSnapshot(subscription);
-      return;
-    }
-    case 'customer.subscription.deleted': {
-      const subscription = event.data.object as Stripe.Subscription;
-      await updateSubscriptionStatusByProviderId(subscription.id, 'canceled');
-      return;
-    }
-    default:
-      return;
+export async function fulfillPaymentOrder(
+  orderId: string,
+  overrides?: {
+    providerCustomerId?: string | null;
+    providerSubscriptionId?: string | null;
+    providerOrderId?: string | null;
   }
-}
-
-export async function fulfillPaymentOrder(orderId: string, overrides?: {
-  providerCustomerId?: string | null;
-  providerSubscriptionId?: string | null;
-}) {
+) {
   const runtime = getPlatformRuntime();
   const order = await runtime.paymentOrders.getById(orderId);
   if (!order) {
@@ -253,24 +190,26 @@ export async function fulfillPaymentOrder(orderId: string, overrides?: {
     paidAt: new Date().toISOString(),
     providerCustomerId: overrides?.providerCustomerId ?? order.providerCustomerId,
     providerSubscriptionId: overrides?.providerSubscriptionId ?? order.providerSubscriptionId,
+    providerOrderId: overrides?.providerOrderId ?? order.providerOrderId,
+    updatedByUserId: order.updatedByUserId ?? order.createdByUserId ?? null,
   });
 
   if (updatedOrder.purchaseKind === 'subscription' && updatedOrder.planKey) {
     const plan = getPlanCatalogEntry(updatedOrder.planKey as PlanKey);
     await runtime.subscriptions.upsertCurrent(updatedOrder.organizationId, {
       organizationId: updatedOrder.organizationId,
-      provider: updatedOrder.provider,
+      provider: 'paypal',
       providerCustomerId: updatedOrder.providerCustomerId,
-      providerSubscriptionId: updatedOrder.providerSubscriptionId,
+      providerSubscriptionId: updatedOrder.providerSubscriptionId ?? updatedOrder.providerOrderId ?? null,
+      providerPriceId: null,
       planKey: plan.key,
       status: 'active',
       billingInterval: plan.billingInterval,
       entitlements: getPlanEntitlements(plan.key),
-      priceCents: plan.prices[updatedOrder.currency].amountCents,
-      currency: updatedOrder.currency,
+      priceCents: plan.prices.USD.amountCents,
+      currency: 'USD',
       currentPeriodStart: new Date().toISOString(),
       currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-      portalManagementEnabled: updatedOrder.provider === 'stripe',
       createdByUserId: updatedOrder.updatedByUserId ?? null,
     });
 
@@ -298,90 +237,280 @@ export async function fulfillPaymentOrder(orderId: string, overrides?: {
   return updatedOrder;
 }
 
-async function fulfillStripeCheckoutSession(session: Stripe.Checkout.Session) {
+export async function handlePayPalWebhook(event: Record<string, unknown>) {
+  const eventType = String(event.event_type ?? event.type ?? '').toUpperCase();
+  const resource = extractWebhookResource(event);
+  const customId = extractCustomId(resource);
+  const subscriptionId = extractSubscriptionId(resource);
+  const captureId = extractCaptureId(resource);
+
+  if (eventType === 'CHECKOUT.ORDER.APPROVED') {
+    return { ok: true, action: 'ignored' as const };
+  }
+
+  if (eventType === 'CHECKOUT.ORDER.COMPLETED') {
+    if (!customId) {
+      throw new Error('PAYPAL_WEBHOOK_CUSTOM_ID_MISSING');
+    }
+    await fulfillPaymentOrder(customId, {
+      providerOrderId: captureId ?? customId,
+    });
+    return { ok: true, action: 'order_fulfilled' as const };
+  }
+
+  if (eventType === 'PAYMENT.CAPTURE.COMPLETED') {
+    if (!customId) {
+      throw new Error('PAYPAL_WEBHOOK_CUSTOM_ID_MISSING');
+    }
+    await fulfillPaymentOrder(customId, {
+      providerOrderId: captureId ?? customId,
+    });
+    return { ok: true, action: 'capture_fulfilled' as const };
+  }
+
+  if (eventType === 'BILLING.SUBSCRIPTION.ACTIVATED') {
+    if (!customId) {
+      throw new Error('PAYPAL_WEBHOOK_CUSTOM_ID_MISSING');
+    }
+    await fulfillPaymentOrder(customId, {
+      providerSubscriptionId: subscriptionId ?? customId,
+      providerOrderId: subscriptionId ?? customId,
+    });
+    return { ok: true, action: 'subscription_activated' as const };
+  }
+
+  if (eventType === 'BILLING.SUBSCRIPTION.CANCELLED' || eventType === 'BILLING.SUBSCRIPTION.SUSPENDED') {
+    if (customId) {
+      await cancelSubscriptionByPaymentOrderId(customId, eventType);
+    }
+    return { ok: true, action: 'subscription_cancelled' as const };
+  }
+
+  return { ok: true, action: 'ignored' as const };
+}
+
+export async function capturePaymentOrder(orderId: string) {
   const runtime = getPlatformRuntime();
-  const order = await runtime.paymentOrders.getByCheckoutSessionId(session.id);
+  const order = await runtime.paymentOrders.getById(orderId);
+  if (!order) {
+    throw new Error('PAYMENT_ORDER_NOT_FOUND');
+  }
+
+  if (order.status === 'paid') {
+    return order;
+  }
+
+  if (!order.providerOrderId) {
+    throw new Error('PAYPAL_PROVIDER_ORDER_ID_MISSING');
+  }
+
+  const capture = await capturePayPalOrder(order.providerOrderId);
+  const payerId = extractPayerId(capture);
+
+  return fulfillPaymentOrder(order.id, {
+    providerCustomerId: payerId ?? order.providerCustomerId ?? null,
+    providerOrderId: order.providerOrderId,
+  });
+}
+
+export async function findPaymentOrderByProviderOrderId(organizationId: string, providerOrderId: string) {
+  const runtime = getPlatformRuntime();
+  const orders = await runtime.paymentOrders.listByOrganizationId(organizationId);
+  return orders.find((order) => order.providerOrderId === providerOrderId) ?? null;
+}
+
+async function createPayPalOrderWithPaymentOrder(input: {
+  orderId: string;
+  purchase: ReturnType<typeof buildCreditPackPurchase>;
+  origin: string;
+  locale: string;
+}): Promise<PayPalApprovalResult> {
+  const pack = getCreditPackCatalogEntry(input.purchase.creditPackKey as CreditPackKey);
+  return createPayPalOrder({
+    customId: input.orderId,
+    amountCents: input.purchase.amountCents,
+    description: `${pack.credits} credits`,
+    returnUrl: buildBillingReturnUrl({
+      origin: input.origin,
+      locale: input.locale,
+      purchaseKind: 'credit-pack',
+      paymentOrderId: input.orderId,
+    }),
+    cancelUrl: buildPricingCancelUrl(input.origin, input.locale, 'credit-pack'),
+    invoiceId: input.orderId,
+  });
+}
+
+async function createPayPalSubscriptionWithPlan(input: {
+  orderId: string;
+  planKey: PlanKey;
+  email: string;
+  origin: string;
+  locale: string;
+}): Promise<PayPalApprovalResult> {
+  const planId = resolvePayPalPlanId(input.planKey);
+  return createPayPalSubscription({
+    customId: input.orderId,
+    planId,
+    returnUrl: buildBillingReturnUrl({
+      origin: input.origin,
+      locale: input.locale,
+      purchaseKind: 'subscription',
+      paymentOrderId: input.orderId,
+    }),
+    cancelUrl: buildPricingCancelUrl(input.origin, input.locale, 'subscription'),
+    subscriberEmail: input.email,
+  });
+}
+
+function buildBillingReturnUrl(input: {
+  origin: string;
+  locale: string;
+  purchaseKind: 'subscription' | 'credit-pack';
+  paymentOrderId: string;
+}) {
+  const url = new URL(`${input.origin}${getLocalizedPath(input.locale, 'billing')}`);
+  url.searchParams.set('checkout', 'success');
+  url.searchParams.set('purchaseKind', input.purchaseKind);
+  url.searchParams.set('paymentOrderId', input.paymentOrderId);
+  return url.toString();
+}
+
+function buildPricingCancelUrl(origin: string, locale: string, purchaseKind: 'subscription' | 'credit-pack') {
+  const url = new URL(`${origin}${getLocalizedPath(locale, 'pricing')}`);
+  url.searchParams.set('checkout', 'cancelled');
+  url.searchParams.set('purchaseKind', purchaseKind);
+  return url.toString();
+}
+
+function getLocalizedPath(locale: string, route: 'billing' | 'pricing') {
+  return `/${locale === 'en-US' ? 'en-US' : 'zh-CN'}/${route}`;
+}
+
+function resolvePayPalPlanId(planKey: PlanKey): string {
+  const specificKey = `PAYPAL_PLAN_ID_${planKey.toUpperCase()}`;
+  const specificPlanId = process.env[specificKey]?.trim();
+  const fallbackPlanId = process.env.PAYPAL_PLAN_ID?.trim();
+  const planId = specificPlanId || fallbackPlanId;
+
+  if (!planId) {
+    throw new Error(`PAYPAL_PLAN_ID_MISSING: ${planKey}`);
+  }
+
+  return planId;
+}
+
+async function cancelSubscriptionByPaymentOrderId(orderId: string, eventType: string) {
+  const runtime = getPlatformRuntime();
+  const order = await runtime.paymentOrders.getById(orderId);
   if (!order) {
     return;
   }
 
-  await fulfillPaymentOrder(order.id, {
-    providerCustomerId:
-      typeof session.customer === 'string' ? session.customer : order.providerCustomerId,
-    providerSubscriptionId:
-      typeof session.subscription === 'string'
-        ? session.subscription
-        : order.providerSubscriptionId,
-  });
-}
-
-async function updateSubscriptionStatusByProviderId(
-  providerSubscriptionId: string,
-  status: 'active' | 'past_due' | 'canceled'
-) {
-  if (!providerSubscriptionId) {
+  const subscription = await runtime.subscriptions.getCurrentByOrganizationId(order.organizationId);
+  if (!subscription) {
     return;
   }
 
-  await updatePlatformStore(async (store) => {
-    const subscription = store.subscriptions.find((entry) => entry.providerSubscriptionId === providerSubscriptionId);
-    if (!subscription) {
-      return;
-    }
-    subscription.status = status;
-    subscription.updatedAt = new Date().toISOString();
+  await runtime.subscriptions.update(subscription.id, {
+    status: 'canceled',
+    canceledAt: new Date().toISOString(),
+    updatedByUserId: order.updatedByUserId ?? order.createdByUserId ?? null,
+  });
+
+  await runtime.paymentOrders.update(order.id, {
+    metadata: {
+      ...order.metadata,
+      webhookEventType: eventType,
+    },
+    updatedByUserId: order.updatedByUserId ?? order.createdByUserId ?? null,
   });
 }
 
-async function updateSubscriptionSnapshot(subscription: Stripe.Subscription) {
-  await updatePlatformStore(async (store) => {
-    const current = store.subscriptions.find((entry) => entry.providerSubscriptionId === subscription.id);
-    if (!current) {
-      return;
+function extractWebhookResource(event: Record<string, unknown>): Record<string, unknown> {
+  const resource = event.resource;
+  if (resource && typeof resource === 'object' && !Array.isArray(resource)) {
+    return resource as Record<string, unknown>;
+  }
+
+  const data = event.data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const nested = (data as Record<string, unknown>).resource;
+    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+      return nested as Record<string, unknown>;
     }
-    current.status = mapStripeSubscriptionStatus(subscription.status);
-    current.providerCustomerId =
-      typeof subscription.customer === 'string' ? subscription.customer : current.providerCustomerId;
-    current.currentPeriodStart = new Date(subscription.items.data[0]?.current_period_start * 1000).toISOString();
-    current.currentPeriodEnd = new Date(subscription.items.data[0]?.current_period_end * 1000).toISOString();
-    current.updatedAt = new Date().toISOString();
-  });
-}
-
-function mapStripeSubscriptionStatus(status: Stripe.Subscription.Status): 'trialing' | 'active' | 'past_due' | 'canceled' | 'expired' {
-  switch (status) {
-    case 'active':
-      return 'active';
-    case 'past_due':
-    case 'unpaid':
-    case 'paused':
-      return 'past_due';
-    case 'trialing':
-      return 'trialing';
-    case 'canceled':
-    case 'incomplete_expired':
-      return 'canceled';
-    default:
-      return 'expired';
-  }
-}
-
-function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string {
-  const candidate =
-    (invoice as Stripe.Invoice & { subscription?: string | Stripe.Subscription | null }).subscription;
-
-  if (typeof candidate === 'string') {
-    return candidate;
   }
 
-  if (candidate && typeof candidate === 'object' && 'id' in candidate) {
-    return String(candidate.id);
-  }
-
-  return '';
+  return {};
 }
 
-export async function findPaymentOrderByProviderSubscriptionId(providerSubscriptionId: string) {
-  const store = await readPlatformStore();
-  return store.paymentOrders.find((order) => order.providerSubscriptionId === providerSubscriptionId) ?? null;
+function extractCustomId(resource: Record<string, unknown>): string | null {
+  const candidate = resource.custom_id ?? resource.customId ?? resource.invoice_id;
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return candidate.trim();
+  }
+
+  const purchaseUnits = resource.purchase_units;
+  if (Array.isArray(purchaseUnits)) {
+    for (const unit of purchaseUnits) {
+      if (!unit || typeof unit !== 'object' || Array.isArray(unit)) {
+        continue;
+      }
+      const purchaseCustomId = (unit as Record<string, unknown>).custom_id;
+      if (typeof purchaseCustomId === 'string' && purchaseCustomId.trim()) {
+        return purchaseCustomId.trim();
+      }
+      const purchaseInvoiceId = (unit as Record<string, unknown>).invoice_id;
+      if (typeof purchaseInvoiceId === 'string' && purchaseInvoiceId.trim()) {
+        return purchaseInvoiceId.trim();
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractSubscriptionId(resource: Record<string, unknown>): string | null {
+  const candidate = resource.id ?? resource.subscription_id ?? resource.billing_agreement_id;
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
+}
+
+function extractCaptureId(resource: Record<string, unknown>): string | null {
+  const candidate = resource.id ?? resource.capture_id ?? resource.order_id;
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return candidate.trim();
+  }
+
+  const relatedIds = resource.supplementary_data;
+  if (relatedIds && typeof relatedIds === 'object' && !Array.isArray(relatedIds)) {
+    const related = (relatedIds as Record<string, unknown>).related_ids;
+    if (related && typeof related === 'object' && !Array.isArray(related)) {
+      const orderId = (related as Record<string, unknown>).order_id;
+      if (typeof orderId === 'string' && orderId.trim()) {
+        return orderId.trim();
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractPayerId(resource: Record<string, unknown>): string | null {
+  const payer = resource.payer;
+  if (payer && typeof payer === 'object' && !Array.isArray(payer)) {
+    const id = (payer as Record<string, unknown>).payer_id;
+    if (typeof id === 'string' && id.trim()) {
+      return id.trim();
+    }
+  }
+
+  const subscriber = resource.subscriber;
+  if (subscriber && typeof subscriber === 'object' && !Array.isArray(subscriber)) {
+    const id = (subscriber as Record<string, unknown>).payer_id;
+    if (typeof id === 'string' && id.trim()) {
+      return id.trim();
+    }
+  }
+
+  return null;
 }

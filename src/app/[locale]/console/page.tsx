@@ -1,5 +1,17 @@
-import { AnonymousScriptWorkbench } from '@/features/script-console/AnonymousScriptWorkbench';
+import { redirect } from 'next/navigation';
+import { resolveViewerSafely } from '@/server/auth/http';
 
-export default function ConsolePage() {
-  return <AnonymousScriptWorkbench />;
+export default async function ConsolePage({
+  params,
+  }: {
+    params: Promise<{ locale: string }>;
+  }) {
+  const { locale } = await params;
+  const viewer = await resolveViewerSafely();
+
+  if (viewer) {
+    redirect(`/${locale}/projects`);
+  }
+
+  redirect(`/${locale}`);
 }

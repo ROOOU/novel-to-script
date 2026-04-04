@@ -1,4 +1,5 @@
 import type {
+  ArtifactRelation,
   CreateCreditAccountInput,
   CreateCreditLedgerEntryInput,
   CreateGenerationArtifactInput,
@@ -43,6 +44,7 @@ import type {
   Workspace,
 } from '@/server/shared/platform/domain';
 import type {
+  ArtifactRelationRepository,
   CreditAccountRepository,
   CreditLedgerRepository,
   GenerationArtifactRepository,
@@ -75,6 +77,7 @@ export interface PersistentPlatformRuntime {
   sourceDocuments: SourceDocumentRepository;
   generationJobs: GenerationJobRepository;
   generationArtifacts: GenerationArtifactRepository;
+  artifactRelations: ArtifactRelationRepository;
   usageEvents: UsageEventRepository;
   subscriptions: SubscriptionRepository;
   paymentOrders: PaymentOrderRepository;
@@ -94,6 +97,7 @@ export function createPersistentPlatformRuntime(): PersistentPlatformRuntime {
     sourceDocuments: createSourceDocumentRepository(),
     generationJobs: createGenerationJobRepository(),
     generationArtifacts: createGenerationArtifactRepository(),
+    artifactRelations: createArtifactRelationRepository(),
     usageEvents: createUsageEventRepository(),
     subscriptions: createSubscriptionRepository(),
     paymentOrders: createPaymentOrderRepository(),
@@ -116,6 +120,11 @@ function createUserRepository(): UserRepository {
       const store = await readPlatformStore();
       return store.users.find((user) => user.email.toLowerCase() === normalizedEmail) ?? null;
     },
+    async getByAuthUserId(authUserId) {
+      const normalizedAuthUserId = authUserId.trim();
+      const store = await readPlatformStore();
+      return store.users.find((user) => user.authUserId === normalizedAuthUserId) ?? null;
+    },
     async listByIds(ids) {
       const idSet = new Set(ids);
       const store = await readPlatformStore();
@@ -128,11 +137,15 @@ function createUserRepository(): UserRepository {
           id: createEntityId('user'),
           email: input.email.trim().toLowerCase(),
           displayName: input.displayName.trim(),
+          authProvider: input.authProvider ?? null,
+          authUserId: input.authUserId ?? null,
           passwordHash: input.passwordHash ?? null,
           avatarUrl: input.avatarUrl ?? null,
           preferredLocale: input.preferredLocale ?? 'zh-CN',
           defaultOrganizationId: input.defaultOrganizationId ?? null,
           status: input.status ?? 'active',
+          emailVerifiedAt: input.emailVerifiedAt ?? null,
+          lastAuthSyncAt: input.lastAuthSyncAt ?? null,
           lastLoginAt: null,
           createdAt: now,
           updatedAt: now,
@@ -537,6 +550,65 @@ function createGenerationArtifactRepository(): GenerationArtifactRepository {
   };
 }
 
+function createArtifactRelationRepository(): ArtifactRelationRepository {
+  return {
+    async getById(id) {
+      const store = await readPlatformStore();
+      return store.artifactRelations.find((relation) => relation.id === id) ?? null;
+    },
+    async create(input) {
+      return updatePlatformStore(async (store) => {
+        const now = getNowTimestamp();
+        const entity: ArtifactRelation = {
+          id: createEntityId('relation'),
+          projectId: input.projectId,
+          upstreamArtifactId: input.upstreamArtifactId,
+          downstreamArtifactId: input.downstreamArtifactId,
+          relationType: input.relationType ?? 'derived_from',
+          metadata: input.metadata,
+          createdAt: now,
+          updatedAt: now,
+          createdByUserId: input.createdByUserId ?? null,
+          updatedByUserId: input.createdByUserId ?? null,
+        };
+        store.artifactRelations.push(entity);
+        return entity;
+      });
+    },
+    async createMany(inputs) {
+      return updatePlatformStore(async (store) => {
+        const now = getNowTimestamp();
+        const created: ArtifactRelation[] = [];
+        for (const input of inputs) {
+          const entity: ArtifactRelation = {
+            id: createEntityId('relation'),
+            projectId: input.projectId,
+            upstreamArtifactId: input.upstreamArtifactId,
+            downstreamArtifactId: input.downstreamArtifactId,
+            relationType: input.relationType ?? 'derived_from',
+            metadata: input.metadata,
+            createdAt: now,
+            updatedAt: now,
+            createdByUserId: input.createdByUserId ?? null,
+            updatedByUserId: input.createdByUserId ?? null,
+          };
+          store.artifactRelations.push(entity);
+          created.push(entity);
+        }
+        return created;
+      });
+    },
+    async listByProjectId(projectId) {
+      const store = await readPlatformStore();
+      return store.artifactRelations.filter((relation) => relation.projectId === projectId);
+    },
+    async listByDownstreamArtifactId(downstreamArtifactId) {
+      const store = await readPlatformStore();
+      return store.artifactRelations.filter((relation) => relation.downstreamArtifactId === downstreamArtifactId);
+    },
+  };
+}
+
 function createUsageEventRepository(): UsageEventRepository {
   return {
     async getById(id) {
@@ -643,7 +715,6 @@ function createSubscriptionRepository(): SubscriptionRepository {
           currency: input.currency ?? null,
           trialEndsAt: input.trialEndsAt ?? null,
           canceledAt: input.canceledAt ?? null,
-          portalManagementEnabled: input.portalManagementEnabled ?? false,
           createdAt: now,
           updatedAt: now,
           createdByUserId: input.createdByUserId ?? null,
@@ -675,9 +746,9 @@ function createPaymentOrderRepository(): PaymentOrderRepository {
       const store = await readPlatformStore();
       return store.paymentOrders.find((paymentOrder) => paymentOrder.id === id) ?? null;
     },
-    async getByCheckoutSessionId(checkoutSessionId) {
+    async getByProviderOrderId(providerOrderId) {
       const store = await readPlatformStore();
-      return store.paymentOrders.find((paymentOrder) => paymentOrder.checkoutSessionId === checkoutSessionId) ?? null;
+      return store.paymentOrders.find((paymentOrder) => paymentOrder.providerOrderId === providerOrderId) ?? null;
     },
     async listByOrganizationId(organizationId) {
       const store = await readPlatformStore();
@@ -698,7 +769,7 @@ function createPaymentOrderRepository(): PaymentOrderRepository {
           amountCents: input.amountCents,
           currency: input.currency,
           creditsGranted: input.creditsGranted ?? null,
-          checkoutSessionId: input.checkoutSessionId ?? null,
+          providerOrderId: input.providerOrderId ?? null,
           providerCustomerId: input.providerCustomerId ?? null,
           providerSubscriptionId: input.providerSubscriptionId ?? null,
           paidAt: input.paidAt ?? null,
