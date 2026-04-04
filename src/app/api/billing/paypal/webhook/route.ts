@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         ok: false,
         error: error instanceof Error ? error.message : 'PAYPAL_WEBHOOK_FAILED',
       },
-      { status: 400 }
+      { status: 500 }
     );
   }
 }

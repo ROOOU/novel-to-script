@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { capturePaymentOrder, findPaymentOrderByProviderOrderId } from '@/server/billing/payments';
 import { requireViewerPlatformContext } from '@/server/auth/http';
-import { applyPlatformResponseHeaders } from '@/server/shared/platform';
+import { applyPlatformResponseHeaders, getPlatformRuntime } from '@/server/shared/platform';
 
 const captureOrderSchema = z.object({
   paymentOrderId: z.string().optional(),
@@ -20,6 +20,21 @@ export async function POST(request: NextRequest) {
   try {
     const body = captureOrderSchema.parse(await request.json());
     if (body.paymentOrderId) {
+      const runtime = getPlatformRuntime();
+      const paymentOrder = await runtime.paymentOrders.getById(body.paymentOrderId);
+      if (!paymentOrder || paymentOrder.organizationId !== viewer.organization.id) {
+        return applyPlatformResponseHeaders(
+          NextResponse.json(
+            {
+              ok: false,
+              error: 'PAYMENT_ORDER_NOT_FOUND',
+            },
+            { status: 404 }
+          ),
+          context
+        );
+      }
+
       const order = await capturePaymentOrder(body.paymentOrderId);
       return applyPlatformResponseHeaders(
         NextResponse.json({

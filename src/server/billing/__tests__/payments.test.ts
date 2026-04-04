@@ -365,48 +365,7 @@ describe('billing/payments orchestration', () => {
 
 
   describe('handlePayPalWebhook', () => {
-    it('fulfills order on CHECKOUT.ORDER.APPROVED', async () => {
-      runtime.paymentOrders.getById.mockResolvedValue({
-        id: 'order-pack-1',
-        organizationId: 'org-1',
-        provider: 'paypal',
-        purchaseKind: 'credit-pack',
-        status: 'pending',
-        planKey: null,
-        creditPackKey: 'credits-50',
-        amountCents: 490,
-        currency: 'USD',
-        creditsGranted: 50,
-        providerOrderId: 'paypal-order-id-123',
-        providerSubscriptionId: null,
-        providerCustomerId: null,
-        createdAt: '2026-03-24T00:00:00.000Z',
-        updatedAt: '2026-03-24T00:00:00.000Z',
-        createdByUserId: 'user-1',
-        updatedByUserId: 'user-1',
-        metadata: {},
-      });
-      runtime.paymentOrders.update.mockResolvedValue({
-        id: 'order-pack-1',
-        organizationId: 'org-1',
-        provider: 'paypal',
-        purchaseKind: 'credit-pack',
-        status: 'paid',
-        planKey: null,
-        creditPackKey: 'credits-50',
-        amountCents: 490,
-        currency: 'USD',
-        creditsGranted: 50,
-        providerOrderId: 'paypal-order-id-123',
-        providerSubscriptionId: null,
-        providerCustomerId: null,
-        createdAt: '2026-03-24T00:00:00.000Z',
-        updatedAt: '2026-03-24T00:00:00.000Z',
-        createdByUserId: 'user-1',
-        updatedByUserId: 'user-1',
-        metadata: {},
-      });
-
+    it('ignores CHECKOUT.ORDER.APPROVED until completion/capture events arrive', async () => {
       const result = await handlePayPalWebhook({
         event_type: 'CHECKOUT.ORDER.APPROVED',
         resource: {
@@ -415,13 +374,9 @@ describe('billing/payments orchestration', () => {
         }
       });
 
-      expect(result.action).toBe('order_fulfilled');
-      expect(mocks.grantCredits).toHaveBeenCalledWith(
-        expect.objectContaining({
-          kind: 'pack_purchase',
-          paymentOrderId: 'order-pack-1',
-        })
-      );
+      expect(result.action).toBe('ignored');
+      expect(runtime.paymentOrders.update).not.toHaveBeenCalled();
+      expect(mocks.grantCredits).not.toHaveBeenCalled();
     });
 
     it('fulfills subscription on BILLING.SUBSCRIPTION.ACTIVATED', async () => {

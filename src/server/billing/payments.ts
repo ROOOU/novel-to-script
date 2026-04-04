@@ -244,7 +244,11 @@ export async function handlePayPalWebhook(event: Record<string, unknown>) {
   const subscriptionId = extractSubscriptionId(resource);
   const captureId = extractCaptureId(resource);
 
-  if (eventType === 'CHECKOUT.ORDER.APPROVED' || eventType === 'CHECKOUT.ORDER.COMPLETED') {
+  if (eventType === 'CHECKOUT.ORDER.APPROVED') {
+    return { ok: true, action: 'ignored' as const };
+  }
+
+  if (eventType === 'CHECKOUT.ORDER.COMPLETED') {
     if (!customId) {
       throw new Error('PAYPAL_WEBHOOK_CUSTOM_ID_MISSING');
     }

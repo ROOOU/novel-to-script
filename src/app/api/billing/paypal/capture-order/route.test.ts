@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getCurrentViewer: vi.fn(),
+  getPlatformRuntime: vi.fn(),
   capturePaymentOrder: vi.fn(),
   findPaymentOrderByProviderOrderId: vi.fn(),
 }));
@@ -10,6 +11,17 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/server/auth/service', () => ({
   getCurrentViewer: () => mocks.getCurrentViewer(),
 }));
+
+vi.mock('@/server/shared/platform', async () => {
+  const actual = await vi.importActual<typeof import('@/server/shared/platform')>(
+    '@/server/shared/platform'
+  );
+
+  return {
+    ...actual,
+    getPlatformRuntime: () => mocks.getPlatformRuntime(),
+  };
+});
 
 vi.mock('@/server/billing/payments', () => ({
   capturePaymentOrder: (...args: unknown[]) => mocks.capturePaymentOrder(...args),
@@ -26,6 +38,14 @@ describe('billing capture order api route', () => {
       session: { locale: 'zh-CN' },
       subscription: null,
       creditAccount: null,
+    });
+    mocks.getPlatformRuntime.mockReturnValue({
+      paymentOrders: {
+        getById: vi.fn().mockResolvedValue({
+          id: 'order_1',
+          organizationId: 'org_1',
+        }),
+      },
     });
   });
 
@@ -52,6 +72,39 @@ describe('billing capture order api route', () => {
     await expect(response.json()).resolves.toEqual({
       ok: true,
       order: { id: 'order_1', status: 'captured' },
+    });
+  });
+
+  it('rejects paymentOrderId captures that belong to another organization', async () => {
+    const getById = vi.fn().mockResolvedValue({
+      id: 'order_1',
+      organizationId: 'org_2',
+    });
+    mocks.getPlatformRuntime.mockReturnValue({
+      paymentOrders: {
+        getById,
+      },
+    });
+
+    const { POST } = await import('@/app/api/billing/paypal/capture-order/route');
+    const response = await POST(
+      new NextRequest('https://app.test/api/billing/paypal/capture-order', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          paymentOrderId: 'order_1',
+        }),
+      })
+    );
+
+    expect(getById).toHaveBeenCalledWith('order_1');
+    expect(mocks.capturePaymentOrder).not.toHaveBeenCalled();
+    expect(response.status).toBe(404);
+    expect(response.headers.get('x-request-id')).toBeTruthy();
+    expect(response.headers.get('x-trace-id')).toBeTruthy();
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'PAYMENT_ORDER_NOT_FOUND',
     });
   });
 
