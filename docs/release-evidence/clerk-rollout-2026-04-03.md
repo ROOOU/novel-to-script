@@ -20,7 +20,7 @@ Release commit:
   - output: `77 files passed, 231 tests passed`
 - [x] `npm run build`
   - output: pass (dynamic routes rendered as expected; no build blocker)
-- [ ] `npm run preflight:production`
+- [x] `npm run preflight:production`
   - output: pass in production deploy context (`[env-preflight] mode=production`, before deployment `dpl_7JkCmqFNNYworJKZR95fL2SWSmR5`)
 - [x] CI links:
   - latest PR checks: `CI / Typecheck, Test, and Build` green (PR #1)
@@ -112,7 +112,6 @@ Release commit:
 - approvers:
 - timestamp: 2026-04-03 (Asia/Shanghai)
 - follow-up actions:
-  - run `npm run preflight:production` in production env context and capture pass output
   - execute manual browser/API validation from `docs/clerk-rollout-execution-runbook.md`
   - fill identity continuity and billing reconciliation evidence before cutover
   - complete signed-in no-loop verification and Ops owner checklist items
@@ -126,3 +125,16 @@ Release commit:
 - rollback_triggered: `no`
 - rollback_timestamp:
 - rollback_reason:
+
+## 8. Manual Acceptance Script (Execution Order)
+
+| Step | Action | Pass Criteria | Evidence Fields |
+| --- | --- | --- | --- |
+| 1 | Confirm production preflight + health gates (`typecheck/test/build/preflight`) | preflight passes in production context and no unsafe env markers (`pk_test_`, `sk_test_`, `localhost`, `PAYPAL_MODE=sandbox`) | `command_outputs`, `ci_links`, `preflight_mode`, `deployment_id` |
+| 2 | Sign in with production Clerk account and call `GET /api/auth/session` | `200` with `{ ok: true, viewer: ... }` | `request_id`, `response_snippet` |
+| 3 | Verify `/{locale}/projects` and `/{locale}/billing` in signed-out + signed-in states | signed-out redirects to login; signed-in loads with no redirect loop | `route`, `status_code`, `redirect_location`, `screenshot_link` |
+| 4 | Verify signed-out `POST /api/generate` and `POST /api/storyboard` | both return shared `401 UNAUTHORIZED` | `endpoint`, `request_id`, `response_snippet` |
+| 5 | Validate identity continuity for one legacy account and one new account | legacy data continuity retained; new account bootstrap complete | `user_id`, `org_id`, `workspace_id`, `subscription_id`, `credit_account_id` |
+| 6 | Validate billing + webhook reconciliation and Ops release checks | one credit-pack + one subscription reconcile correctly; Clerk/OAuth/Vercel/DB safety checks complete | `order_id`, `webhook_event_ids`, `local_state_notes`, `verdict`, `verifier`, `timestamp`, `deployment_link` |
+
+Rule: stop immediately on any failed step and record `NO-GO`.
