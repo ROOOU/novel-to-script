@@ -10,20 +10,20 @@ PR:
 
 Release commit:
 
-- `57d51c0`
+- `42648d2`
 
 ## 1. Engineering Health Gates
 
 - [x] `npm run typecheck`
   - output: pass
 - [x] `npm test`
-  - output: `76 files passed, 224 tests passed`
+  - output: `77 files passed, 231 tests passed`
 - [x] `npm run build`
   - output: pass (dynamic routes rendered as expected; no build blocker)
 - [ ] `npm run preflight:production`
-  - output: failed in current local env as expected; missing production Clerk/DB/PayPal vars and `PAYPAL_MODE=live`
-- [ ] CI links:
-  - latest PR checks pending confirmation on `16bf6bf`
+  - output: pass in production deploy context (`[env-preflight] mode=production`, before deployment `dpl_7JkCmqFNNYworJKZR95fL2SWSmR5`)
+- [x] CI links:
+  - latest PR checks: `CI / Typecheck, Test, and Build` green (PR #1)
 
 ## 2. Session + Route Validation
 
@@ -44,7 +44,7 @@ Release commit:
   - `/api/storyboard` response: `401 {"ok":false,"error":"UNAUTHORIZED"}`
 - [x] rollout smoke report captured
   - command: `BASE_URL=https://app.012294.xyz npm run smoke:rollout`
-  - deployment: `dpl_CPSh4j3qhwG9taBNxkpUqFKBAFMk` (`https://app.012294.xyz`, production READY)
+  - deployment: `dpl_7JkCmqFNNYworJKZR95fL2SWSmR5` (`https://app.012294.xyz`, production READY)
   - core rows:
     - `GET /api/auth/session` -> `401 {"ok":false,"error":"UNAUTHORIZED"}`
     - `POST /api/generate` -> `401 {"ok":false,"error":"UNAUTHORIZED"}`
