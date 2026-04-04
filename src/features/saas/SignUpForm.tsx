@@ -17,7 +17,7 @@ export function SignUpForm({ locale, redirectUrl }: SignUpFormProps) {
       <div className="auth-card">
         <SignUp
           routing="path"
-          path="/sign-up"
+          path={`/${locale}/sign-up`}
           signInUrl={`/${locale}/login`}
           fallbackRedirectUrl={fallbackRedirectUrl}
         />

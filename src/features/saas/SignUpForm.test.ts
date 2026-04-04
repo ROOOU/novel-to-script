@@ -14,7 +14,7 @@ describe('SignUpForm', () => {
     expect(page.props.children.props.children.type).toBe(SignUp);
     expect(page.props.children.props.children.props).toMatchObject({
       routing: 'path',
-      path: '/sign-up',
+      path: '/en-US/sign-up',
       signInUrl: '/en-US/login',
       fallbackRedirectUrl: '/en-US/pricing',
     });
