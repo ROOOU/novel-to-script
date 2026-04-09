@@ -11,7 +11,7 @@ export interface PayPalConfig {
 }
 
 export interface PayPalMoney {
-  currencyCode: 'USD';
+  currency_code: 'USD';
   value: string;
 }
 
@@ -60,6 +60,8 @@ type PayPalApiResponse = Record<string, unknown> & {
   id?: string;
   links?: Array<Record<string, unknown>>;
 };
+
+const DEFAULT_PAYPAL_HTTP_TIMEOUT_MS = 15_000;
 
 let accessTokenCache: {
   token: string;
@@ -224,7 +226,7 @@ function readHeader(headers: Headers, names: string[]): string | null {
 
 function formatPayPalAmount(amountCents: number): PayPalMoney {
   return {
-    currencyCode: 'USD',
+    currency_code: 'USD',
     value: (amountCents / 100).toFixed(2),
   };
 }
@@ -245,15 +247,23 @@ async function getPayPalAccessToken(config: PayPalConfig): Promise<string> {
     return accessTokenCache.token;
   }
 
-  const response = await fetch(`${config.baseUrl}/v1/oauth2/token`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept: 'application/json',
-    },
-    body: 'grant_type=client_credentials',
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(`${config.baseUrl}/v1/oauth2/token`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: 'grant_type=client_credentials',
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`PAYPAL_TOKEN_TIMEOUT: ${resolvePayPalHttpTimeoutMs()}ms`);
+    }
+    throw new Error(`PAYPAL_TOKEN_NETWORK_FAILED: ${resolveErrorMessage(error)}`);
+  }
 
   const payload = await parseJsonOrText(response);
   if (!response.ok) {
@@ -280,19 +290,28 @@ async function payPalRequest<T extends PayPalApiResponse>(
   init: RequestInit
 ): Promise<T> {
   const token = await getPayPalAccessToken(config);
-  const response = await fetch(`${config.baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...(init.headers ?? {}),
-    },
-  });
+  let response: Response;
+  const context = normalizePayPalErrorContext(path);
+  try {
+    response = await fetchWithTimeout(`${config.baseUrl}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error(`PAYPAL_${context}_TIMEOUT: ${resolvePayPalHttpTimeoutMs()}ms`);
+    }
+    throw new Error(`PAYPAL_${context}_NETWORK_FAILED: ${resolveErrorMessage(error)}`);
+  }
 
   const payload = await parseJsonOrText(response);
   if (!response.ok) {
-    throw new Error(buildPayPalApiError(path, response.status, payload));
+    throw new Error(buildPayPalApiError(context, response.status, payload));
   }
 
   return payload as T;
@@ -330,4 +349,47 @@ function buildPayPalApiError(context: string, status: number, payload: Record<st
         : 'PAYPAL_API_ERROR';
 
   return `PAYPAL_${context}_FAILED: ${status} ${message}`;
+}
+
+function resolveErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : 'PAYPAL_NETWORK_ERROR';
+}
+
+function normalizePayPalErrorContext(path: string): string {
+  return path
+    .replace(/^\/+/, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .toUpperCase() || 'REQUEST';
+}
+
+function resolvePayPalHttpTimeoutMs(): number {
+  const parsed = Number.parseInt(process.env.PAYPAL_HTTP_TIMEOUT_MS ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_PAYPAL_HTTP_TIMEOUT_MS;
+  }
+  return parsed;
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), resolvePayPalHttpTimeoutMs());
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const name = Reflect.get(error, 'name');
+  return name === 'AbortError';
 }

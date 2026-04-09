@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { viewerOwnsProject } from '@/server/auth/viewer-access';
 import { createProjectGenerationJob } from '@/server/generation/service';
 import { requireViewerResponse } from '@/server/auth/http';
 import { getPlatformRuntime } from '@/server/shared/platform';
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
 import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
 import { createJobSchema } from './schema';
+
+export const maxDuration = 300;
 
 export async function GET(
   _request: NextRequest,
@@ -18,7 +21,7 @@ export async function GET(
   const { projectId } = await params;
   const runtime = getPlatformRuntime();
   const project = await runtime.projects.getById(projectId);
-  if (!project || project.organizationId !== viewer.organization.id) {
+  if (!project || !viewerOwnsProject(viewer, project)) {
     return NextResponse.json(
       {
         ok: false,
@@ -47,7 +50,7 @@ export async function POST(
   const { projectId } = await params;
   const runtime = getPlatformRuntime();
   const project = await runtime.projects.getById(projectId);
-  if (!project || project.organizationId !== viewer.organization.id) {
+  if (!project || !viewerOwnsProject(viewer, project)) {
     return NextResponse.json(
       {
         ok: false,
@@ -98,14 +101,23 @@ async function normalizeStoryboardPayload(input: {
   payload: StoryboardGenerateRequestV2;
 }) {
   const runtime = getPlatformRuntime();
-  const scriptArtifactIds = Array.from(
-    new Set((input.payload.scriptArtifactIds ?? []).map((artifactId) => artifactId.trim()).filter(Boolean))
-  );
+  const scope = input.payload.scope === 'selection' ? 'selection' : 'all';
+  const scriptArtifactIds = normalizeArtifactIds(input.payload.scriptArtifactIds);
+  const selection = normalizeStoryboardSelection(input.payload.selection);
   const scriptText = input.payload.scriptText?.trim();
+  const artifactIdsToValidate = Array.from(
+    new Set([
+      ...scriptArtifactIds,
+      ...(scope === 'selection' ? selection.artifactIds : []),
+    ])
+  );
+  const hasArtifactSource =
+    scriptArtifactIds.length > 0 ||
+    (scope === 'selection' && selection.artifactIds.length > 0);
 
-  if (scriptArtifactIds.length > 0) {
+  if (artifactIdsToValidate.length > 0) {
     const artifacts = await Promise.all(
-      scriptArtifactIds.map(async (artifactId) => ({
+      artifactIdsToValidate.map(async (artifactId) => ({
         artifactId,
         artifact: await runtime.generationArtifacts.getById(artifactId),
       }))
@@ -126,13 +138,68 @@ async function normalizeStoryboardPayload(input: {
     }
   }
 
-  if (scriptArtifactIds.length === 0 && !scriptText) {
+  if (scope === 'selection' && !hasStoryboardSelectionCriteria(selection)) {
+    throw new Error('STORYBOARD_SELECTION_REQUIRED');
+  }
+
+  if (scope === 'selection' && !hasArtifactSource) {
+    throw new Error('STORYBOARD_SELECTION_REQUIRES_SCRIPT_ARTIFACTS');
+  }
+
+  if (!hasArtifactSource && !scriptText) {
     throw new Error('STORYBOARD_SOURCE_REQUIRED');
   }
 
   return {
     ...input.payload,
+    scope,
     ...(scriptArtifactIds.length > 0 ? { scriptArtifactIds } : {}),
+    ...(scope === 'selection' ? { selection } : {}),
     ...(scriptText ? { scriptText } : {}),
   } satisfies StoryboardGenerateRequestV2;
+}
+
+function normalizeArtifactIds(ids: string[] | null | undefined): string[] {
+  if (!Array.isArray(ids)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(ids.map((artifactId) => artifactId.trim()).filter(Boolean))
+  );
+}
+
+function normalizeStoryboardSelection(
+  selection: StoryboardGenerateRequestV2['selection'] | null | undefined
+) {
+  return {
+    artifactIds: normalizeArtifactIds(selection?.artifactIds),
+    episodeNumbers: Array.isArray(selection?.episodeNumbers)
+      ? Array.from(
+          new Set(
+            selection.episodeNumbers.filter(
+              (episodeNumber): episodeNumber is number =>
+                Number.isInteger(episodeNumber) && episodeNumber > 0
+            )
+          )
+        )
+      : [],
+    sceneIds: Array.isArray(selection?.sceneIds)
+      ? Array.from(
+          new Set(
+            selection.sceneIds
+              .map((sceneId) => sceneId.trim())
+              .filter(Boolean)
+          )
+        )
+      : [],
+  };
+}
+
+function hasStoryboardSelectionCriteria(selection: ReturnType<typeof normalizeStoryboardSelection>) {
+  return (
+    selection.artifactIds.length > 0 ||
+    selection.episodeNumbers.length > 0 ||
+    selection.sceneIds.length > 0
+  );
 }

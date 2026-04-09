@@ -1,11 +1,15 @@
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+import { resolveLegacyStoryboardRedirect } from '@/app/legacy-route-redirects';
 import { getCurrentViewer } from '@/server/auth/service';
 
 export default async function StoryboardPage() {
-  const viewer = await getCurrentViewer();
-  if (viewer) {
-    redirect(`/${viewer.session.locale}/projects`);
-  }
+  const [viewer, requestHeaders] = await Promise.all([getCurrentViewer(), headers()]);
 
-  redirect('/zh-CN');
+  redirect(
+    resolveLegacyStoryboardRedirect({
+      viewerLocale: viewer?.session.locale,
+      acceptLanguage: requestHeaders.get('accept-language'),
+    })
+  );
 }

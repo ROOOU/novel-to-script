@@ -50,7 +50,7 @@ export function useTextFileUpload({
 
   const loadTextFile = useCallback(async (file: File) => {
     if (!isSupportedTextFile(file)) {
-      showToast('仅支持上传 .txt 或 .md 文件', 'error');
+      showToast('仅支持上传 .txt、.md 或 .docx 文件', 'error');
       return;
     }
 

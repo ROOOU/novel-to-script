@@ -1,12 +1,19 @@
 'use client';
 
+import { useRef } from 'react';
+import type { SupportedLocale } from '@/server/shared/platform/domain';
+
 interface SourceEditorPanelProps {
+  locale: SupportedLocale;
   labels: {
     sourceTitle: string;
     sourceHint: string;
+    uploadSource: string;
+    uploadHint: string;
     saveSource: string;
     generateScript: string;
     generateStoryboard: string;
+    sourceActionHint: string;
     sourceLabel: string;
     genre: string;
     episodeCount: string;
@@ -21,6 +28,8 @@ interface SourceEditorPanelProps {
   style: string;
   message: string | null;
   saving: boolean;
+  uploading: boolean;
+  uploadAccept: string;
   runningKind: string | null;
   pipelineActionLabel?: string;
   onSourceTitleChange: (value: string) => void;
@@ -30,11 +39,13 @@ interface SourceEditorPanelProps {
   onEpisodeDurationChange: (value: string) => void;
   onStyleChange: (value: string) => void;
   onSaveSource: () => void;
+  onUploadFile: (file: File) => Promise<void>;
   onRunScript: () => void;
   onRunPipeline: () => void;
 }
 
 export function SourceEditorPanel({
+  locale,
   labels,
   sourceTitle,
   sourceText,
@@ -44,6 +55,8 @@ export function SourceEditorPanel({
   style,
   message,
   saving,
+  uploading,
+  uploadAccept,
   runningKind,
   pipelineActionLabel,
   onSourceTitleChange,
@@ -53,9 +66,13 @@ export function SourceEditorPanel({
   onEpisodeDurationChange,
   onStyleChange,
   onSaveSource,
+  onUploadFile,
   onRunScript,
   onRunPipeline,
 }: SourceEditorPanelProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const disableEditorActions = saving || uploading;
+
   return (
     <article className="card stack-gap">
       <div>
@@ -70,13 +87,39 @@ export function SourceEditorPanel({
         <span>{labels.sourceLabel}</span>
         <textarea value={sourceText} onChange={(event) => onSourceTextChange(event.target.value)} rows={14} />
       </label>
+      <div className="action-row">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={uploadAccept}
+          className="hidden-file-input"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) {
+              return;
+            }
+
+            void onUploadFile(file);
+          }}
+        />
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disableEditorActions}
+        >
+          {labels.uploadSource}
+        </button>
+      </div>
+      <p className="helper-text">{labels.uploadHint}</p>
       <div className="form-grid">
         <label className="field">
           <span>{labels.genre}</span>
           <select value={genre} onChange={(event) => onGenreChange(event.target.value)}>
-            <option value="urban">urban</option>
-            <option value="xianxia">xianxia</option>
-            <option value="fantasy">fantasy</option>
+            <option value="urban">{locale === 'en-US' ? 'Urban romance' : '都市情感'}</option>
+            <option value="xianxia">{locale === 'en-US' ? 'Xianxia' : '仙侠'}</option>
+            <option value="fantasy">{locale === 'en-US' ? 'Fantasy adventure' : '奇幻冒险'}</option>
           </select>
         </label>
         <label className="field">
@@ -94,20 +137,31 @@ export function SourceEditorPanel({
         <label className="field">
           <span>{labels.style}</span>
           <select value={style} onChange={(event) => onStyleChange(event.target.value)}>
-            <option value="dramatic">dramatic</option>
-            <option value="comedic">comedic</option>
-            <option value="suspense">suspense</option>
+            <option value="dramatic">{locale === 'en-US' ? 'Dramatic' : '戏剧化'}</option>
+            <option value="comedic">{locale === 'en-US' ? 'Comedic' : '轻喜剧'}</option>
+            <option value="suspense">{locale === 'en-US' ? 'Suspense' : '悬疑'}</option>
           </select>
         </label>
       </div>
+      <p className="helper-text">{labels.sourceActionHint}</p>
       <div className="action-row">
-        <button type="button" className="secondary-button" onClick={onSaveSource} disabled={saving}>
+        <button type="button" className="secondary-button" onClick={onSaveSource} disabled={disableEditorActions}>
           {labels.saveSource}
         </button>
-        <button type="button" className="primary-button" onClick={onRunScript} disabled={runningKind === 'script' || !sourceText.trim()}>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={onRunScript}
+          disabled={disableEditorActions || runningKind === 'script' || !sourceText.trim()}
+        >
           {labels.generateScript}
         </button>
-        <button type="button" className="secondary-button" onClick={onRunPipeline} disabled={runningKind === 'pipeline' || !sourceText.trim()}>
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={onRunPipeline}
+          disabled={disableEditorActions || runningKind === 'pipeline' || !sourceText.trim()}
+        >
           {pipelineActionLabel ?? labels.generateStoryboard}
         </button>
       </div>

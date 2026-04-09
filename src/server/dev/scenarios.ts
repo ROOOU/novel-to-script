@@ -206,7 +206,7 @@ async function seedDeveloperDemoProject(viewer: DeveloperScenarioViewer) {
     createdByUserId: viewer.user.id,
   });
 
-  await runtime.generationArtifacts.create({
+  const outlineArtifact = await runtime.generationArtifacts.create({
     organizationId: viewer.organization.id,
     workspaceId: viewer.workspace.id,
     projectId: project.id,
@@ -234,7 +234,7 @@ async function seedDeveloperDemoProject(viewer: DeveloperScenarioViewer) {
     createdByUserId: viewer.user.id,
   });
 
-  await runtime.generationArtifacts.create({
+  const latestScript = await runtime.generationArtifacts.create({
     organizationId: viewer.organization.id,
     workspaceId: viewer.workspace.id,
     projectId: project.id,
@@ -250,6 +250,86 @@ async function seedDeveloperDemoProject(viewer: DeveloperScenarioViewer) {
     createdByUserId: viewer.user.id,
   });
 
+  const storyboardJob = await runtime.generationJobs.create({
+    organizationId: viewer.organization.id,
+    workspaceId: viewer.workspace.id,
+    projectId: project.id,
+    sourceDocumentId: sourceDocument.id,
+    kind: 'storyboard-generation',
+    requestedByUserId: viewer.user.id,
+    inputSnapshot: {
+      developerScenario: true,
+      metadata: {
+        upstreamJobId: job.id,
+      },
+    },
+    billingState: 'none',
+    reservedCredits: 0,
+  });
+
+  await runtime.generationJobs.markSucceeded(storyboardJob.id, {
+    progress: 100,
+    currentStep: 'seeded',
+    outputSummary: 'Developer sandbox storyboard artifacts seeded',
+    billingState: 'none',
+    updatedByUserId: viewer.user.id,
+  });
+
+  const storyboardArtifact = await runtime.generationArtifacts.create({
+    organizationId: viewer.organization.id,
+    workspaceId: viewer.workspace.id,
+    projectId: project.id,
+    generationJobId: storyboardJob.id,
+    sourceDocumentId: sourceDocument.id,
+    kind: 'storyboard',
+    format: 'text/plain',
+    title: '第1集分镜',
+    content: SAMPLE_STORYBOARD,
+    metadata: {
+      sourceScriptArtifactIds: [latestScript.id],
+      visualStyle: 'cinematic realism',
+    },
+    createdByUserId: viewer.user.id,
+  });
+
+  const legacyStoryboardArtifact = await runtime.generationArtifacts.create({
+    organizationId: viewer.organization.id,
+    workspaceId: viewer.workspace.id,
+    projectId: project.id,
+    generationJobId: storyboardJob.id,
+    sourceDocumentId: sourceDocument.id,
+    kind: 'storyboard',
+    format: 'text/plain',
+    title: '第1集分镜（历史版本）',
+    content: SAMPLE_STORYBOARD_LEGACY,
+    metadata: {
+      sourceScriptArtifactIds: [firstScript.id],
+      legacySeed: true,
+    },
+    createdByUserId: viewer.user.id,
+  });
+
+  await runtime.artifactRelations.createMany([
+    {
+      projectId: project.id,
+      upstreamArtifactId: analysisArtifact.id,
+      downstreamArtifactId: outlineArtifact.id,
+      createdByUserId: viewer.user.id,
+    },
+    {
+      projectId: project.id,
+      upstreamArtifactId: outlineArtifact.id,
+      downstreamArtifactId: latestScript.id,
+      createdByUserId: viewer.user.id,
+    },
+    {
+      projectId: project.id,
+      upstreamArtifactId: latestScript.id,
+      downstreamArtifactId: storyboardArtifact.id,
+      createdByUserId: viewer.user.id,
+    },
+  ]);
+
   const bundle = await getProjectBundle(project.id);
 
   return {
@@ -258,6 +338,11 @@ async function seedDeveloperDemoProject(viewer: DeveloperScenarioViewer) {
     project,
     sourceDocument,
     analysisArtifactId: analysisArtifact.id,
+    outlineArtifactId: outlineArtifact.id,
+    latestScriptArtifactId: latestScript.id,
+    storyboardArtifactId: storyboardArtifact.id,
+    legacyStoryboardArtifactId: legacyStoryboardArtifact.id,
+    artifactRelationCount: bundle?.artifactRelations.length ?? 0,
     insights: bundle?.insights ?? null,
   };
 }
@@ -326,4 +411,17 @@ const SAMPLE_SCRIPT_V2 = [
   '林晚独自站在风口，远处霓虹映出她发红的眼眶。',
   '顾承砚下车，目光停在她身上两秒：“你现在最缺的，不是情绪，是时间。”',
   '林晚压住呼吸：“所以你是来救我，还是来收购我？”',
+].join('\n');
+
+const SAMPLE_STORYBOARD = [
+  '镜头1｜远景｜旧厂房外夜景，霓虹和冷风同时压住画面。',
+  '镜头2｜中景｜林晚站在门口，公告在风里翻卷，情绪压抑。',
+  '镜头3｜近景｜顾承砚下车抬眼，台词带压迫感。',
+  '镜头4｜对切｜林晚反问，情绪从防守转为挑衅。',
+].join('\n');
+
+const SAMPLE_STORYBOARD_LEGACY = [
+  '镜头1｜中景｜旧厂房门口，林晚站在风里。',
+  '镜头2｜近景｜顾承砚开口试探。',
+  '镜头3｜对切｜两人对峙，停在情绪拉扯上。',
 ].join('\n');

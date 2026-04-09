@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireViewerResponse } from '@/server/auth/http';
+import { viewerOwnsArtifact } from '@/server/auth/viewer-access';
 import { getPlatformRuntime } from '@/server/shared/platform';
 import type { GenerationArtifactFormat } from '@/server/shared/platform/domain';
 
@@ -15,7 +16,7 @@ export async function GET(
   const { artifactId } = await params;
   const runtime = getPlatformRuntime();
   const artifact = await runtime.generationArtifacts.getById(artifactId);
-  if (!artifact || artifact.organizationId !== viewer.organization.id) {
+  if (!artifact || !viewerOwnsArtifact(viewer, artifact)) {
     return NextResponse.json(
       {
         ok: false,
@@ -26,10 +27,12 @@ export async function GET(
   }
 
   const filename = resolveArtifactFilename(artifact.title, artifact.format, artifact.metadata?.downloadFilename);
+  const body = resolveArtifactDownloadBody(artifact.content ?? '', artifact.metadata?.contentEncoding);
+  const contentType = resolveContentTypeHeader(artifact.format);
 
-  return new NextResponse(artifact.content ?? '', {
+  return new NextResponse(body, {
     headers: {
-      'Content-Type': `${artifact.format}; charset=utf-8`,
+      'Content-Type': contentType,
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   });
@@ -52,6 +55,8 @@ function extensionForFormat(format: GenerationArtifactFormat) {
   switch (format) {
     case 'application/json':
       return 'json';
+    case 'text/csv':
+      return 'csv';
     case 'text/markdown':
       return 'md';
     case 'application/pdf':
@@ -64,4 +69,20 @@ function extensionForFormat(format: GenerationArtifactFormat) {
     default:
       return 'txt';
   }
+}
+
+function resolveArtifactDownloadBody(content: string, contentEncoding: unknown) {
+  if (contentEncoding === 'base64') {
+    return Buffer.from(content, 'base64');
+  }
+
+  return content;
+}
+
+function resolveContentTypeHeader(format: GenerationArtifactFormat) {
+  if (format === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return format;
+  }
+
+  return `${format}; charset=utf-8`;
 }

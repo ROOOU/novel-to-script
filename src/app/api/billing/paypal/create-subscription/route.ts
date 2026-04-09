@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { PlanKey } from '@/server/billing/catalog';
 import { createSubscriptionCheckout } from '@/server/billing/payments';
 import { requireViewerResponse } from '@/server/auth/http';
+import { getPayPalRouteErrorStatus, logPayPalRouteError } from '@/app/api/billing/paypal/error-response';
 
 const createSubscriptionSchema = z.object({
   planKey: z.string().min(1),
@@ -40,12 +41,13 @@ export async function POST(request: NextRequest) {
       checkout,
     });
   } catch (error) {
+    logPayPalRouteError('create-subscription', error);
     return NextResponse.json(
       {
         ok: false,
         error: error instanceof Error ? error.message : 'PAYPAL_CREATE_SUBSCRIPTION_FAILED',
       },
-      { status: 400 }
+      { status: getPayPalRouteErrorStatus(error) }
     );
   }
 }

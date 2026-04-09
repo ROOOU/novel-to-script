@@ -7,17 +7,24 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "check:paypal:sandbox": "node scripts/check-paypal-sandbox-readiness.mjs",
+    "paypal:provision:sandbox-plans": "node scripts/create-paypal-sandbox-plans.mjs",
     "typecheck": "mkdir -p .next/types .next/dev/types && next typegen && tsc --noEmit --incremental false",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:smoke:paypal": "vitest run src/app/api/billing/paypal/smoke.test.ts"
   },
   "dependencies": {
+    "@clerk/nextjs": "^7.0.11",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.71.0",
+    "docx": "^9.6.1",
     "drizzle-orm": "^0.45.1",
     "ioredis": "^5.10.1",
+    "mammoth": "^1.12.0",
     "next": "16.2.1",
     "openai": "^6.32.0",
+    "papaparse": "^5.5.3",
     "postgres": "^3.4.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -25,6 +32,7 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

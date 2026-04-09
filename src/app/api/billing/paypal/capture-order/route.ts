@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { capturePaymentOrder, findPaymentOrderByProviderOrderId } from '@/server/billing/payments';
 import { requireViewerResponse } from '@/server/auth/http';
+import { getPayPalRouteErrorStatus, logPayPalRouteError } from '@/app/api/billing/paypal/error-response';
 
 const captureOrderSchema = z.object({
   paymentOrderId: z.string().optional(),
@@ -46,12 +47,13 @@ export async function POST(request: NextRequest) {
       order,
     });
   } catch (error) {
+    logPayPalRouteError('capture-order', error);
     return NextResponse.json(
       {
         ok: false,
         error: error instanceof Error ? error.message : 'PAYPAL_CAPTURE_FAILED',
       },
-      { status: 400 }
+      { status: getPayPalRouteErrorStatus(error) }
     );
   }
 }

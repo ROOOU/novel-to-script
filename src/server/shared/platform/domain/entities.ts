@@ -50,6 +50,7 @@ export type GenerationArtifactKind =
   | 'prompt';
 export type GenerationArtifactFormat =
   | 'text/plain'
+  | 'text/csv'
   | 'application/json'
   | 'text/markdown'
   | 'application/pdf'
@@ -188,6 +189,33 @@ export interface GenerationJob extends AuditFields {
   startedAt?: Timestamp | null;
   finishedAt?: Timestamp | null;
   cancelledAt?: Timestamp | null;
+}
+
+export interface StoryboardShot {
+  sceneId: string;
+  shotId: string;
+  shotType: string;
+  camera: string;
+  composition: string;
+  motion: string;
+  subject: string;
+  environment: string;
+  lighting: string;
+  audioHint: string;
+  videoPrompt: string;
+}
+
+export interface StoryboardMetadata extends Record<string, unknown> {
+  safeMode?: boolean;
+  characters?: string[];
+  scenes?: string[];
+  sourceScriptArtifactIds?: string[];
+  shots?: StoryboardShot[];
+  shotCount?: number;
+  parseError?: string;
+  parseFallbackMode?: 'text-derived' | 'partial-text-derived';
+  invalidShotIndexes?: number[];
+  invalidShotErrors?: string[];
 }
 
 export interface GenerationArtifact extends AuditFields {

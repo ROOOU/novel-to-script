@@ -38,9 +38,13 @@ export async function POST(request: NextRequest) {
     const message =
       error instanceof Error && error.message === 'INVALID_CREDENTIALS'
         ? 'INVALID_CREDENTIALS'
-        : error instanceof Error
-          ? error.message
+        : error instanceof z.ZodError
+          ? 'INVALID_REQUEST'
           : 'AUTH_FAILED';
+
+    if (message === 'AUTH_FAILED') {
+      console.error('[auth/session] unexpected failure', error);
+    }
 
     return NextResponse.json(
       {

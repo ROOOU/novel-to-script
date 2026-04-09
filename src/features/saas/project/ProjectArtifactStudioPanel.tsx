@@ -1,7 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { GenerationArtifact, SupportedLocale } from '@/server/shared/platform/domain';
+import type {
+  ArtifactRelation,
+  GenerationArtifact,
+  SupportedLocale,
+} from '@/server/shared/platform/domain';
 import {
   createEmptyAnalysisDraft,
   createEmptyOutlineEntry,
@@ -14,6 +18,10 @@ import {
 } from '@/lib/artifact-editors';
 import { summarizeVersionDiff } from '@/lib/version-summary';
 import type { Character, NovelAnalysis, OutlineEntry } from '@/lib/types';
+import {
+  collectArtifactIdsFromMetadata,
+  deriveArtifactLineage,
+} from '@/features/saas/project/artifact-lineage';
 
 type ArtifactKind = 'analysis' | 'outline' | 'script';
 
@@ -22,6 +30,7 @@ interface ProjectArtifactStudioPanelProps {
   title: string;
   subtitle: string;
   artifacts: GenerationArtifact[];
+  artifactRelations?: ArtifactRelation[];
   allowedKinds?: ArtifactKind[];
   initialKind?: ArtifactKind;
   selectedArtifactId?: string | null;
@@ -91,6 +100,7 @@ export function ProjectArtifactStudioPanel({
   title,
   subtitle,
   artifacts,
+  artifactRelations = [],
   allowedKinds,
   initialKind,
   selectedArtifactId: controlledSelectedArtifactId,
@@ -100,6 +110,7 @@ export function ProjectArtifactStudioPanel({
   labels,
   onVersionSaved,
 }: ProjectArtifactStudioPanelProps) {
+  const uiCopy = getStudioUiCopy(locale);
   const [activeKind, setActiveKind] = useState<ArtifactKind>(initialKind ?? allowedKinds?.[0] ?? 'analysis');
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
@@ -198,13 +209,16 @@ export function ProjectArtifactStudioPanel({
     [previousVersion?.content, selectedArtifact?.content]
   );
 
-  const sourceArtifactIds = useMemo(() => {
+  const sourceArtifacts = useMemo(() => {
     if (!selectedArtifact) {
       return [];
     }
 
-    return collectArtifactIdsFromMetadata(selectedArtifact.metadata);
-  }, [selectedArtifact]);
+    return deriveArtifactLineage(selectedArtifact, artifacts, artifactRelations).directUpstream;
+  }, [artifactRelations, artifacts, selectedArtifact]);
+  const sourceArtifactIds = sourceArtifacts.length
+    ? sourceArtifacts.map((entry) => entry.artifactId)
+    : collectArtifactIdsFromMetadata(selectedArtifact?.metadata);
 
   const downloadHref = selectedArtifact ? `/api/artifacts/${selectedArtifact.id}/download` : null;
   const selectedArtifactContent = selectedArtifact?.content?.trim() ?? '';
@@ -275,15 +289,15 @@ export function ProjectArtifactStudioPanel({
 
   async function handleCopyArtifactContent() {
     if (!selectedArtifactContent) {
-      setMessage('No content available to copy.');
+      setMessage(uiCopy.noContentToCopy);
       return;
     }
 
     try {
       await copyTextToClipboard(selectedArtifactContent);
-      setMessage('Copied artifact content to clipboard.');
+      setMessage(uiCopy.copySuccess);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Failed to copy artifact content.');
+      setMessage(error instanceof Error ? error.message : uiCopy.copyFailure);
     }
   }
 
@@ -369,28 +383,28 @@ export function ProjectArtifactStudioPanel({
             </div>
 
             <div className="stack-gap-sm">
-              <strong>Source context</strong>
+              <strong>{uiCopy.sourceContext}</strong>
               <div className="artifact-meta-grid">
                 <div className="artifact-meta-card">
-                  <span>Current version</span>
+                  <span>{uiCopy.currentVersion}</span>
                   <strong>v{selectedArtifact.version}</strong>
                 </div>
                 <div className="artifact-meta-card">
-                  <span>Root version</span>
-                  <strong>{rootVersion ? `v${rootVersion.version}` : 'v1'}</strong>
+                  <span>{uiCopy.rootVersion}</span>
+                  <strong>{rootVersion ? `v${rootVersion.version}` : uiCopy.initialVersion}</strong>
                 </div>
                 <div className="artifact-meta-card">
-                  <span>Previous version</span>
-                  <strong>{previousVersion ? `v${previousVersion.version}` : 'Initial'}</strong>
+                  <span>{uiCopy.previousVersion}</span>
+                  <strong>{previousVersion ? `v${previousVersion.version}` : uiCopy.initialState}</strong>
                 </div>
                 <div className="artifact-meta-card">
-                  <span>Version group</span>
+                  <span>{uiCopy.versionGroup}</span>
                   <strong>{shortenId(selectedArtifact.versionGroupId ?? selectedArtifact.id)}</strong>
                 </div>
               </div>
               <div className="artifact-meta-grid">
                 <div className="artifact-meta-card">
-                  <span>Parent artifact</span>
+                  <span>{uiCopy.parentArtifact}</span>
                   <strong>
                     {selectedArtifact.parentArtifactId
                       ? shortenId(selectedArtifact.parentArtifactId)
@@ -400,32 +414,37 @@ export function ProjectArtifactStudioPanel({
                   </strong>
                 </div>
                 <div className="artifact-meta-card">
-                  <span>Generation job</span>
+                  <span>{uiCopy.generationJob}</span>
                   <strong>{shortenId(selectedArtifact.generationJobId)}</strong>
                 </div>
                 <div className="artifact-meta-card">
-                  <span>Content source</span>
-                  <strong>{selectedArtifact.metadata ? 'artifact metadata' : 'artifact content'}</strong>
+                  <span>{uiCopy.contentSource}</span>
+                  <strong>{selectedArtifact.metadata ? uiCopy.artifactMetadata : uiCopy.artifactContent}</strong>
                 </div>
                 <div className="artifact-meta-card">
-                  <span>Source links</span>
+                  <span>{uiCopy.sourceLinks}</span>
                   <strong>{sourceArtifactIds.length}</strong>
                 </div>
               </div>
               {sourceArtifactIds.length > 0 ? (
                 <div className="stack-gap-sm">
-                  <strong>Source artifact IDs</strong>
+                  <strong>{uiCopy.sourceArtifactIds}</strong>
                   <div className="list-row-meta" style={{ flexWrap: 'wrap' }}>
-                    {sourceArtifactIds.map((artifactId) => (
-                      <span key={artifactId} className="chip">
-                        {shortenId(artifactId)}
-                      </span>
-                    ))}
+                    {sourceArtifactIds.map((artifactId) => {
+                      const sourceArtifact = sourceArtifacts.find((entry) => entry.artifactId === artifactId);
+                      return (
+                        <span key={artifactId} className="chip">
+                          {sourceArtifact?.artifact
+                            ? `${sourceArtifact.artifact.title} · v${sourceArtifact.artifact.version}`
+                            : shortenId(artifactId)}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
                 <p className="helper-text">
-                  No upstream artifact metadata found for this version.
+                  {uiCopy.noSourceArtifacts}
                 </p>
               )}
             </div>
@@ -441,7 +460,7 @@ export function ProjectArtifactStudioPanel({
                   }
                 }}
               >
-                Download current version
+                {uiCopy.downloadCurrentVersion}
               </a>
               <button
                 type="button"
@@ -449,7 +468,7 @@ export function ProjectArtifactStudioPanel({
                 onClick={handleCopyArtifactContent}
                 disabled={!selectedArtifactContent}
               >
-                Copy content
+                {uiCopy.copyContent}
               </button>
               {activeKind === 'script' && selectedArtifact && onRunScriptPrimaryAction ? (
                 <button
@@ -477,6 +496,7 @@ export function ProjectArtifactStudioPanel({
 
             {activeKind === 'analysis' ? (
               <AnalysisEditor
+                locale={locale}
                 labels={labels}
                 draft={analysisDraft}
                 parseError={analysisParseError}
@@ -526,6 +546,7 @@ export function ProjectArtifactStudioPanel({
 }
 
 function AnalysisEditor({
+  locale,
   labels,
   draft,
   parseError,
@@ -533,6 +554,7 @@ function AnalysisEditor({
   onChange,
   onRawChange,
 }: {
+  locale: SupportedLocale;
   labels: ProjectArtifactStudioPanelProps['labels'];
   draft: NovelAnalysis;
   parseError: string | null;
@@ -557,9 +579,9 @@ function AnalysisEditor({
         <label className="analysis-item field">
           <span className="analysis-item-label">{labels.analysisGenreField}</span>
           <select value={draft.genre} onChange={(event) => onChange({ ...draft, genre: event.target.value as NovelAnalysis['genre'] })}>
-            <option value="urban">urban</option>
-            <option value="xianxia">xianxia</option>
-            <option value="fantasy">fantasy</option>
+            <option value="urban">{locale === 'en-US' ? 'Urban romance' : '都市情感'}</option>
+            <option value="xianxia">{locale === 'en-US' ? 'Xianxia' : '仙侠'}</option>
+            <option value="fantasy">{locale === 'en-US' ? 'Fantasy adventure' : '奇幻冒险'}</option>
           </select>
         </label>
         <label className="analysis-item field" style={{ gridColumn: '1 / -1' }}>
@@ -851,41 +873,62 @@ function ScriptEditor({
   );
 }
 
-function collectArtifactIdsFromMetadata(metadata?: Record<string, unknown> | null): string[] {
-  if (!metadata) {
-    return [];
-  }
-
-  const rawValues = [
-    metadata.sourceScriptArtifactIds,
-    metadata.sourceArtifactIds,
-    metadata.upstreamArtifactIds,
-    metadata.sourceArtifactId,
-  ];
-
-  const artifactIds = rawValues.flatMap((value) => normalizeArtifactIdValue(value));
-  return Array.from(new Set(artifactIds));
-}
-
-function normalizeArtifactIdValue(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.flatMap((item) => normalizeArtifactIdValue(item));
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    return trimmed ? [trimmed] : [];
-  }
-
-  return [];
-}
-
 function shortenId(value: string) {
   if (value.length <= 12) {
     return value;
   }
 
   return `${value.slice(0, 6)}…${value.slice(-4)}`;
+}
+
+function getStudioUiCopy(locale: SupportedLocale) {
+  if (locale === 'en-US') {
+    return {
+      noContentToCopy: 'No content available to copy.',
+      copySuccess: 'Copied artifact content to clipboard.',
+      copyFailure: 'Failed to copy artifact content.',
+      sourceContext: 'Source context',
+      currentVersion: 'Current version',
+      rootVersion: 'Root version',
+      previousVersion: 'Previous version',
+      versionGroup: 'Version group',
+      parentArtifact: 'Parent artifact',
+      generationJob: 'Generation job',
+      contentSource: 'Content source',
+      sourceLinks: 'Source links',
+      sourceArtifactIds: 'Source artifact IDs',
+      noSourceArtifacts: 'No upstream artifact metadata found for this version.',
+      downloadCurrentVersion: 'Download current version',
+      copyContent: 'Copy content',
+      artifactMetadata: 'artifact metadata',
+      artifactContent: 'artifact content',
+      initialVersion: 'v1',
+      initialState: 'Initial',
+    };
+  }
+
+  return {
+    noContentToCopy: '当前没有可复制的内容。',
+    copySuccess: '已复制当前产物内容。',
+    copyFailure: '复制产物内容失败。',
+    sourceContext: '来源上下文',
+    currentVersion: '当前版本',
+    rootVersion: '根版本',
+    previousVersion: '上一版本',
+    versionGroup: '版本组',
+    parentArtifact: '父级产物',
+    generationJob: '生成任务',
+    contentSource: '内容来源',
+    sourceLinks: '来源链接',
+    sourceArtifactIds: '来源产物 ID',
+    noSourceArtifacts: '当前版本没有上游产物元数据。',
+    downloadCurrentVersion: '下载当前版本',
+    copyContent: '复制内容',
+    artifactMetadata: '产物元数据',
+    artifactContent: '产物内容',
+    initialVersion: 'v1',
+    initialState: '初始版本',
+  };
 }
 
 async function copyTextToClipboard(text: string) {

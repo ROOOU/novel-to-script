@@ -44,6 +44,7 @@ export interface PlatformStoreData {
 
 const STORE_VERSION = 1;
 const PRIMARY_STORE_KEY = 'primary';
+const STORE_CACHE_TTL_MS = Number(process.env.NOVELSCRIPT_STORE_CACHE_TTL_MS ?? '800');
 const DEFAULT_DATA: PlatformStoreData = {
   version: STORE_VERSION,
   users: [],
@@ -65,6 +66,9 @@ const DEFAULT_DATA: PlatformStoreData = {
 };
 
 let writeChain = Promise.resolve();
+let cachedDatabaseStore: PlatformStoreData | null = null;
+let cachedDatabaseStoreLoadedAt = 0;
+let cachedDatabaseStorePromise: Promise<PlatformStoreData> | null = null;
 
 export async function readPlatformStore(): Promise<PlatformStoreData> {
   if (shouldUseDatabaseRuntime()) {
@@ -140,6 +144,29 @@ async function persistPlatformStore(data: PlatformStoreData): Promise<void> {
 }
 
 async function readPlatformStoreFromDatabase(): Promise<PlatformStoreData> {
+  const now = Date.now();
+  if (cachedDatabaseStore && now - cachedDatabaseStoreLoadedAt < STORE_CACHE_TTL_MS) {
+    return cachedDatabaseStore;
+  }
+
+  if (cachedDatabaseStorePromise) {
+    return cachedDatabaseStorePromise;
+  }
+
+  cachedDatabaseStorePromise = readPlatformStoreSnapshotFromDatabase()
+    .then((store) => {
+      cachedDatabaseStore = store;
+      cachedDatabaseStoreLoadedAt = Date.now();
+      return store;
+    })
+    .finally(() => {
+      cachedDatabaseStorePromise = null;
+    });
+
+  return cachedDatabaseStorePromise;
+}
+
+async function readPlatformStoreSnapshotFromDatabase(): Promise<PlatformStoreData> {
   const db = getDatabaseClient();
   await ensurePlatformStoreSnapshotTable();
 
@@ -184,6 +211,9 @@ async function persistPlatformStoreToDatabase(data: PlatformStoreData): Promise<
         updatedAt: getNowTimestamp(),
       },
     });
+
+  cachedDatabaseStore = data;
+  cachedDatabaseStoreLoadedAt = Date.now();
 }
 
 function cloneDefaultStore(): PlatformStoreData {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { cleanText, countChineseWords, splitChapters } from '@/lib/preprocessor';
+import {
+  cleanText,
+  countChineseWords,
+  splitChapters,
+  truncateTextForLLM,
+} from '@/lib/preprocessor';
 
 describe('cleanText', () => {
   it('removes ad copy and trims whitespace', () => {
@@ -44,5 +49,16 @@ describe('splitChapters', () => {
 describe('countChineseWords', () => {
   it('counts chinese, english, and numeric groups', () => {
     expect(countChineseWords('你好 world 2025')).toBe(4);
+  });
+});
+
+describe('truncateTextForLLM', () => {
+  it('keeps long prompts within both char and byte budgets', () => {
+    const input = `第一段 ${'甲'.repeat(2200)}\n\n第二段 ${'乙'.repeat(2200)}\n\n第三段 ${'丙'.repeat(2200)}`;
+    const output = truncateTextForLLM(input, { maxChars: 5000, maxBytes: 12000 });
+
+    expect(output.length).toBeLessThanOrEqual(5000);
+    expect(Buffer.byteLength(output, 'utf8')).toBeLessThanOrEqual(12000);
+    expect(output).toContain('第一段');
   });
 });

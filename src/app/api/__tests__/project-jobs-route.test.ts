@@ -42,7 +42,11 @@ describe('createJobSchema', () => {
     const parsed = createJobSchema.parse({
       kind: 'storyboard-generation',
       payload: {
+        scope: 'selection',
         scriptArtifactIds: ['script_a', 'script_b'],
+        selection: {
+          episodeNumbers: [1, 3],
+        },
         visualStyle: 'cinematic',
         safeMode: true,
       },
@@ -53,6 +57,8 @@ describe('createJobSchema', () => {
       throw new Error('Expected storyboard-generation branch');
     }
     expect(parsed.payload.scriptArtifactIds).toEqual(['script_a', 'script_b']);
+    expect(parsed.payload.scope).toBe('selection');
+    expect(parsed.payload.selection?.episodeNumbers).toEqual([1, 3]);
   });
 
   it('rejects storyboard generation jobs without script text or script artifacts', () => {
@@ -64,5 +70,17 @@ describe('createJobSchema', () => {
         },
       })
     ).toThrow(/scriptText or scriptArtifactIds/i);
+  });
+
+  it('rejects selection-scoped storyboard jobs without selection criteria', () => {
+    expect(() =>
+      createJobSchema.parse({
+        kind: 'storyboard-generation',
+        payload: {
+          scope: 'selection',
+          scriptArtifactIds: ['script_a'],
+        },
+      })
+    ).toThrow(/selection criteria/i);
   });
 });

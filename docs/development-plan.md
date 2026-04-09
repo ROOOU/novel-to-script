@@ -354,184 +354,260 @@ npm run typecheck
 ### Phase 1：支付系统与套餐（10 天）
 
 #### 1.1 PayPal SDK 搭建
-- [ ] 创建 `src/server/billing/paypal.ts` — PayPal Client 工厂函数
-- [ ] 实现 `isPayPalEnabled()` 环境检测
-- [ ] 添加环境变量：`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE`, `PAYPAL_WEBHOOK_ID`
-- [ ] 更新 `.env.local.example`
+- [x] 创建 `src/server/billing/paypal.ts` — PayPal Client 工厂函数
+- [x] 实现 `isPayPalEnabled()` 环境检测
+- [x] 添加环境变量：`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_MODE`, `PAYPAL_WEBHOOK_ID`
+- [x] 更新 `.env.local.example`
 
 #### 1.2 PayPal 订阅
-- [ ] 创建 `src/app/api/billing/paypal/create-subscription/route.ts`
-- [ ] 实现 PayPal Subscription Plans 创建逻辑
-- [ ] 处理 `BILLING.SUBSCRIPTION.ACTIVATED` webhook 事件
-- [ ] 订阅激活后 → `upsertCurrent` Subscription + 发放月度 credits
+- [x] 创建 `src/app/api/billing/paypal/create-subscription/route.ts`
+- [x] 实现 PayPal Subscription Plans 创建逻辑
+- [x] 处理 `BILLING.SUBSCRIPTION.ACTIVATED` webhook 事件
+- [x] 订阅激活后 → `upsertCurrent` Subscription + 发放月度 credits
 
 #### 1.3 PayPal 一次性支付（点数包）
-- [ ] 创建 `src/app/api/billing/paypal/create-order/route.ts`
-- [ ] 创建 `src/app/api/billing/paypal/capture-order/route.ts`
-- [ ] 支付捕获后 → 创建 PaymentOrder + 发放 credits
+- [x] 创建 `src/app/api/billing/paypal/create-order/route.ts`
+- [x] 创建 `src/app/api/billing/paypal/capture-order/route.ts`
+- [x] 支付捕获后 → 创建 PaymentOrder + 发放 credits
 
 #### 1.4 PayPal Webhook
-- [ ] 创建 `src/app/api/billing/paypal/webhook/route.ts`
-- [ ] 实现 webhook 签名验证
-- [ ] 幂等处理：通过 `providerOrderId` 防止重复交付
-- [ ] 处理事件：`BILLING.SUBSCRIPTION.ACTIVATED`, `CANCELLED`, `EXPIRED`, `PAYMENT.CAPTURE.COMPLETED`
+- [x] 创建 `src/app/api/billing/paypal/webhook/route.ts`
+- [x] 实现 webhook 签名验证
+- [x] 幂等处理：通过 `providerOrderId` 防止重复交付
+- [x] 处理事件：`BILLING.SUBSCRIPTION.ACTIVATED`, `CANCELLED`, `EXPIRED`, `PAYMENT.CAPTURE.COMPLETED`
 
 #### 1.5 前端 PayPal 集成
-- [ ] 修改 `src/features/saas/PricingClient.tsx` — PayPal Buttons 替代旧按钮
-- [ ] 订阅流程前端：创建订阅 → PayPal 弹窗 → 回调确认
-- [ ] 点数包流程前端：创建订单 → PayPal 弹窗 → 捕获订单
+- [x] 修改 `src/features/saas/PricingClient.tsx` — PayPal Buttons 替代旧按钮
+- [x] 订阅流程前端：创建订阅 → PayPal 弹窗 → 回调确认
+- [x] 点数包流程前端：创建订单 → PayPal 弹窗 → 捕获订单
 
 #### 1.6 套餐体系重构
-- [ ] 修改 `src/server/billing/catalog.ts` — `PlanKey` 改为 `'free' | 'creator' | 'pro'`
-- [ ] 验证 Free: 30 credits / Creator: 200 / Pro: 600
-- [ ] 验证所有计划 `maxMembers: 1`, `canUseTeamCollaboration: false`
-- [ ] 验证所有 `prices` 只保留 USD
-- [ ] 验证 Credit packs: 50/200/500 三档
+- [x] 修改 `src/server/billing/catalog.ts` — `PlanKey` 改为 `'free' | 'creator' | 'pro'`
+- [x] 验证 Free: 30 credits / Creator: 200 / Pro: 600
+- [x] 验证所有计划 `maxMembers: 1`, `canUseTeamCollaboration: false`
+- [x] 验证所有 `prices` 只保留 USD
+- [x] 验证 Credit packs: 50/200/500 三档
 
 #### 1.7 Stripe 完全清除
-- [ ] 删除 `src/server/billing/stripe.ts`
-- [ ] 删除 `src/app/api/stripe/` 整个目录
-- [ ] 修改 `src/server/billing/payments.ts` — 移除 Stripe imports/functions
-- [ ] 修改 `src/server/shared/platform/domain/entities.ts` — `BillingProvider` 只保留 `'paypal' | 'internal'`
-- [ ] 运行 `npm uninstall stripe`
-- [ ] 运行 `npm run build && npm run typecheck` 验证无错误
-- [ ] `grep -r "stripe" src/` 确认无残留
+- [x] 删除 `src/server/billing/stripe.ts`
+- [x] 删除 `src/app/api/stripe/` 整个目录
+- [x] 修改 `src/server/billing/payments.ts` — 移除 Stripe imports/functions
+- [x] 修改 `src/server/shared/platform/domain/entities.ts` — `BillingProvider` 只保留 `'paypal' | 'internal'`
+- [x] 运行 `npm uninstall stripe`
+- [x] 运行 `npm run build && npm run typecheck` 验证无错误
+- [x] `grep -r "stripe" src/` 确认无残留
 
 ---
 
 ### Phase 2：入口与定位收口（7 天）
 
 #### 2.1 Landing Page
-- [ ] 修改 `src/app/page.tsx` — 登录态检测：已登录 → redirect `/{locale}/projects`
-- [ ] 创建 `src/features/landing/LandingPage.tsx` — Hero + 功能展示 + 套餐预览 + CTA
-- [ ] 修改 `src/app/[locale]/page.tsx` — CTA 指向 `/projects` 而非 `/console`
-- [ ] Landing Page 适配移动端响应式
+- [x] 修改 `src/app/page.tsx` — 登录态检测：已登录 → redirect `/{locale}/projects`
+- [x] 创建 `src/features/landing/LandingPage.tsx` — Hero + 功能展示 + 套餐预览 + CTA
+- [x] 修改 `src/app/[locale]/page.tsx` — CTA 指向 `/projects` 而非 `/console`
+- [x] Landing Page 适配移动端响应式
 
 #### 2.2 导航重构
-- [ ] 修改 `src/app/nav-links.tsx` — 移除工具页入口，改为 Projects / Pricing
-- [ ] 修改 `src/components/AppShellHeader.tsx` — 已登录显示 Credits + 头像；未登录显示 Login/Sign Up
-- [ ] 修改 `src/components/MobileNav.tsx` — 同步移动端导航
+- [x] 修改 `src/app/nav-links.tsx` — 移除工具页入口，改为 Projects / Pricing
+- [x] 修改 `src/components/AppShellHeader.tsx` — 已登录显示 Credits + 头像；未登录显示 Login/Sign Up
+- [x] 修改 `src/components/MobileNav.tsx` — 同步移动端导航
 
 #### 2.3 多租户隐藏
-- [ ] 全站 UI 文案检查：确保无「工作区」「组织」「团队」字样
-- [ ] 注册流程自动创建 org + workspace，用户无感知
-- [ ] 确认 `src/server/shared/platform/domain/entities.ts` 保留 Organization/Workspace 模型
+- [x] 全站 UI 文案检查：确保无「工作区」「组织」「团队」字样
+- [x] 注册流程自动创建 org + workspace，用户无感知
+- [x] 确认 `src/server/shared/platform/domain/entities.ts` 保留 Organization/Workspace 模型
 
 #### 2.4 旧路径兼容
-- [ ] `/console` → redirect `/{locale}/projects`
-- [ ] `/storyboard` → 已登录 redirect / 未登录 Landing
-- [ ] `/` (root) → 已登录 redirect / 未登录 Landing
+- [x] `/console` → redirect `/{locale}/projects`
+- [x] `/storyboard` → 已登录 redirect / 未登录 Landing
+- [x] `/` (root) → 已登录 redirect / 未登录 Landing
 
 ---
 
 ### Phase 3：核心功能联动（15 天）
 
 #### 3.1 ArtifactRelation 模型
-- [ ] 确认 `entities.ts` 中 `ArtifactRelation` 类型已定义（✅ 已有）
-- [ ] 确认 `schema.ts` 中 `artifact_relations` 表已定义（✅ 已有）
-- [ ] 确认 `repositories/index.ts` 中 `ArtifactRelationRepository` 已定义（✅ 已有）
-- [ ] 确认 `persistent-runtime.ts` 中仓储已注册
-- [ ] 确认 `getProjectBundle()` 返回 `artifactRelations`（✅ 已有）
+- [x] 确认 `entities.ts` 中 `ArtifactRelation` 类型已定义（✅ 已有）
+- [x] 确认 `schema.ts` 中 `artifact_relations` 表已定义（✅ 已有）
+- [x] 确认 `repositories/index.ts` 中 `ArtifactRelationRepository` 已定义（✅ 已有）
+- [x] 确认 `persistent-runtime.ts` 中仓储已注册
+- [x] 确认 `getProjectBundle()` 返回 `artifactRelations`（✅ 已有）
 
 #### 3.2 分镜输入升级
-- [ ] 确认 `contracts.ts` 中 `StoryboardGenerateRequestV2` 已定义（✅ 已有 `scriptArtifactIds`）
-- [ ] 确认 `jobs/route.ts` 中 `normalizeStoryboardPayload()` 已实现（✅ 已有）
-- [ ] 确认分镜完成后写入 ArtifactRelation（✅ 已在 `processor.ts` 实现）
-- [ ] 确认分镜 artifact metadata 记录 `sourceScriptArtifactIds`
+- [x] 确认 `contracts.ts` 中 `StoryboardGenerateRequestV2` 已定义（✅ 已有 `scriptArtifactIds`）
+- [x] 确认 `jobs/route.ts` 中 `normalizeStoryboardPayload()` 已实现（✅ 已有）
+- [x] 确认分镜完成后写入 ArtifactRelation（✅ 已在 `processor.ts` 实现）
+- [x] 确认分镜 artifact metadata 记录 `sourceScriptArtifactIds`
 
 #### 3.3 Pipeline 一键链路
-- [ ] 确认 `src/app/api/projects/[projectId]/pipelines/route.ts` 已创建（✅ 已有）
-- [ ] 确认 `src/server/generation/pipeline-service.ts` 已实现（✅ 已有）
-- [ ] 确认 `processor.ts` 中 `maybeRunNovelToStoryboardPipeline()` 已实现（✅ 已有）
-- [ ] 验证：剧本失败 → pipeline 终止，已有工件保留
-- [ ] 验证：用户可中途取消 → 分镜 Job 不创建
+- [x] 确认 `src/app/api/projects/[projectId]/pipelines/route.ts` 已创建（✅ 已有）
+- [x] 确认 `src/server/generation/pipeline-service.ts` 已实现（✅ 已有）
+- [x] 确认 `processor.ts` 中 `maybeRunNovelToStoryboardPipeline()` 已实现（✅ 已有）
+- [x] 验证：剧本失败 → pipeline 终止，已有工件保留
+- [x] 验证：用户可中途取消 → 分镜 Job 不创建
 
 #### 3.4 工作台视图重构
-- [ ] 修改 `src/features/saas/ProjectWorkspaceClient.tsx` — 7 Tab 重构
-- [ ] Tab 1 - 原文：粘贴/编辑/保存，「生成剧本」+「一键生成分镜」按钮
-- [ ] Tab 2 - 分析：浏览 analysis 工件 + 下载
-- [ ] Tab 3 - 大纲：浏览 outline 工件 + 下载
-- [ ] Tab 4 - 剧本：按集查看/下载 + 「从此版本生成分镜」入口
-- [ ] Tab 5 - 分镜：浏览/下载 + 依赖来源展示
-- [ ] Tab 6 - 导出：统一筛选/下载
-- [ ] Tab 7 - 任务：状态/进度/重试
-- [ ] 修改 `src/features/saas/project/SourceEditorPanel.tsx` — 新增「一键生成分镜」按钮
-- [ ] 修改 `src/features/saas/project/ProjectArtifactStudioPanel.tsx` — 剧本 Tab 新增分镜入口
-- [ ] 创建 `src/features/saas/project/StoryboardPanel.tsx` — 分镜 Tab
+- [x] 修改 `src/features/saas/ProjectWorkspaceClient.tsx` — 7 Tab 重构
+- [x] Tab 1 - 原文：粘贴/编辑/保存，「生成剧本」+「一键生成分镜」按钮
+- [x] Tab 2 - 分析：浏览 analysis 工件 + 下载
+- [x] Tab 3 - 大纲：浏览 outline 工件 + 下载
+- [x] Tab 4 - 剧本：按集查看/下载 + 「从此版本生成分镜」入口
+- [x] Tab 5 - 分镜：浏览/下载 + 依赖来源展示
+- [x] Tab 6 - 导出：统一筛选/下载
+- [x] Tab 7 - 任务：状态/进度/重试
+- [x] 修改 `src/features/saas/project/SourceEditorPanel.tsx` — 新增「一键生成分镜」按钮
+- [x] 修改 `src/features/saas/project/ProjectArtifactStudioPanel.tsx` — 剧本 Tab 新增分镜入口
+- [x] 创建 `src/features/saas/project/StoryboardPanel.tsx` — 分镜 Tab
 
 ---
 
 ### Phase 4：体验补齐（10 天）
 
 #### 4.1 资产浏览中心
-- [ ] 创建 `src/features/saas/project/AssetBrowserPanel.tsx`
-- [ ] 按类型筛选：全部 / 分析 / 大纲 / 剧本 / 分镜
-- [ ] 按时间排序
-- [ ] 依赖关系可视化展示
-- [ ] 历史工件无 relation 时降级展示
-- [ ] 批量下载入口
+- [x] 创建 `src/features/saas/project/AssetBrowserPanel.tsx`
+- [x] 按类型筛选：全部 / 分析 / 大纲 / 剧本 / 分镜
+- [x] 按时间排序
+- [x] 依赖关系可视化展示
+- [x] 历史工件无 relation 时降级展示
+- [x] 批量下载入口
 
 #### 4.2 任务中心完善
-- [ ] 修改 `src/features/saas/project/JobTimelinePanel.tsx`
-- [ ] 完整状态展示：排队中 / 运行中 / 成功 / 失败 / 已取消
-- [ ] 失败时显示失败阶段和错误原因
-- [ ] 重试按钮（从失败任务直接重试）
-- [ ] Pipeline 模式下两阶段独立进度
+- [x] 修改 `src/features/saas/project/JobTimelinePanel.tsx`
+- [x] 完整状态展示：排队中 / 运行中 / 成功 / 失败 / 已取消
+- [x] 失败时显示失败阶段和错误原因
+- [x] 重试按钮（从失败任务直接重试）
+- [x] Pipeline 模式下两阶段独立进度
 
 #### 4.3 阶段化进度展示
-- [ ] 创建 `src/features/saas/project/PipelineProgressBar.tsx`
-- [ ] 展示阶段：预处理 → 分析 → 大纲 → 剧本 → 分镜
-- [ ] 已完成 ✅ / 进行中 🔄 / 等待中 ⏳
-- [ ] 集成到 `ProjectWorkspaceClient.tsx`
-- [ ] 一键模式和单步模式复用
+- [x] 创建 `src/features/saas/project/PipelineProgressBar.tsx`
+- [x] 展示阶段：预处理 → 分析 → 大纲 → 剧本 → 分镜
+- [x] 已完成 ✅ / 进行中 🔄 / 等待中 ⏳
+- [x] 集成到 `ProjectWorkspaceClient.tsx`
+- [x] 一键模式和单步模式复用
 
 #### 4.4 用量仪表盘
-- [ ] 修改 `src/features/saas/BillingClient.tsx` — 增加用量可视化
-- [ ] 修改 `src/components/AppShellHeader.tsx` — 顶栏 Credits 余额显示
-- [ ] 展示：当前余额、本月消耗、消耗来源分布
+- [x] 修改 `src/features/saas/BillingClient.tsx` — 增加用量可视化
+- [x] 修改 `src/components/AppShellHeader.tsx` — 顶栏 Credits 余额显示
+- [x] 展示：当前余额、本月消耗、消耗来源分布
 
 ---
 
 ### Phase 5：测试与验证（5 天）
 
 #### 5.1 单元测试
-- [ ] `billing/catalog` — 新 catalog Free/Creator/Pro、无 CNY、无 Team
-- [ ] `billing/payments` — PayPal order 创建、webhook mock
-- [ ] `generation/pipeline-service` — 串行编排、失败中止、工件保留
-- [ ] `ArtifactRelation` repo — 创建、查询、批量写入
+- [x] `billing/catalog` — 新 catalog Free/Creator/Pro、无 CNY、无 Team
+- [x] `billing/payments` — PayPal order 创建、webhook mock
+- [x] `generation/pipeline-service` — 串行编排、失败中止、工件保留
+- [x] `ArtifactRelation` repo — 创建、查询、批量写入
 
 #### 5.2 集成测试
-- [ ] API routes: jobs（强类型）
-- [ ] API routes: pipelines
-- [ ] API routes: project bundle（含 relations）
-- [ ] 运行 `npm run test` 通过
-- [ ] 运行 `npm run typecheck` 通过
+- [x] API routes: jobs（强类型）
+- [x] API routes: pipelines
+- [x] API routes: project bundle（含 relations）
+- [x] 运行 `npm run test` 通过
+- [x] 运行 `npm run typecheck` 通过
 
 #### 5.3 E2E 验证清单
-- [ ] 未登录访问首页 → Landing Page
-- [ ] 注册新用户 → 自动 org+workspace + Free plan + 30 credits
-- [ ] UI 中无「工作区」「组织」字样
-- [ ] 创建项目 → 生成剧本 → analysis/outline/script 工件
-- [ ] 剧本 Tab → 继续生成分镜 → 分镜绑定剧本版本
-- [ ] 一键小说→分镜 → 阶段进度展示 + 中间工件保留
-- [ ] 一键模式中途剧本失败 → 分镜不启动 + 已有工件保留
-- [ ] 资产浏览器 → 按类型筛选 + 依赖关系展示
+
+注：截至 2026-03-24，本地自动化、route-to-route 集成和离线 smoke 已完成；下面两项 PayPal sandbox 验收仍待真实外部 Sandbox 联调，并应在 [docs/paypal-sandbox-execution-report.md](/Users/shengyufei/Desktop/op%20短剧_副本/novel-to-script/docs/paypal-sandbox-execution-report.md) 留痕后再勾选。
+- [x] 未登录访问首页 → Landing Page
+- [x] 注册新用户 → 自动 org+workspace + Free plan + 30 credits
+- [x] UI 中无「工作区」「组织」字样
+- [x] 创建项目 → 生成剧本 → analysis/outline/script 工件
+- [x] 剧本 Tab → 继续生成分镜 → 分镜绑定剧本版本
+- [x] 一键小说→分镜 → 阶段进度展示 + 中间工件保留
+- [x] 一键模式中途剧本失败 → 分镜不启动 + 已有工件保留
+- [x] 资产浏览器 → 按类型筛选 + 依赖关系展示
 - [ ] PayPal 订阅 (sandbox) → 权益正确交付
 - [ ] PayPal 点数包 (sandbox) → credits 即时到账
-- [ ] 额度不足时生成 → 提示 INSUFFICIENT_CREDITS
-- [ ] 旧路径 /console 访问 → 正确重定向
-- [ ] 历史工件（无 relation）→ 降级展示，不报错
-- [ ] 工件下载 → TXT/MD/JSON 正常
+- [x] 额度不足时生成 → 提示 INSUFFICIENT_CREDITS
+- [x] 旧路径 /console 访问 → 正确重定向
+- [x] 历史工件（无 relation）→ 降级展示，不报错
+- [x] 工件下载 → TXT/MD/JSON 正常
 
 ---
 
-## 10. P1 后续规划（Phase 5 交付后启动）
+## 10. Phase 6：v4.0 增强（12 天）
 
-| 任务 | 估时 | 说明 |
-|------|------|------|
-| 分镜结构化 JSON 输出 | 3d | text + json 双产物 |
-| 集级/场景级选择生成 | 3d | 不强制全量 |
-| 文件上传（txt/md/docx） | 2d | 原文输入增强 |
-| DOCX / CSV 导出 | 2d | 导出格式扩展 |
-| 用量权益可视化增强 | 2d | 消耗来源追踪 |
+### 6.1 分镜结构化 JSON 输出（3 天）
 
+| 步骤 | 涉及文件 | 任务 |
+|------|---------|------|
+| 数据模型 | `src/server/shared/platform/domain/entities.ts` | 定义 `StoryboardShot` 接口与 `StoryboardMetadata` |
+| 生成逻辑 | `src/server/storyboard/application/run-storyboard-generation.ts` | 提示词升级，要求 LLM 输出包含 JSON 块；解析并分离 text/json |
+| 后处理 | `src/server/generation/processor.ts` | 分镜工件同时存储结构化 metadata |
+| 前端展示 | `src/features/saas/project/StoryboardPanel.tsx` | 支持在 Tab 中切换预览文本与镜头卡片视图 |
+
+### 6.2 集级/场景级选择生成（3 天）
+
+| 步骤 | 涉及文件 | 任务 |
+|------|---------|------|
+| 协议更新 | `src/features/storyboard/contracts.ts` | `StoryboardGenerateRequestV2` 新增 `scope` (all/selection) |
+| 服务逻辑 | `src/server/storyboard/application/run-storyboard-generation.ts` | 根据 scope 过滤 script 工件内容 |
+| UI 交互 | `src/features/saas/ProjectWorkspaceClient.tsx` | 点击「继续生成分镜」时，支持勾选指定集数/版本 |
+
+### 6.3 文件上传支持（2 天）
+
+| 步骤 | 涉及文件 | 任务 |
+|------|---------|------|
+| 后端逻辑 | `src/app/api/projects/[projectId]/source/route.ts` | 支持 `multipart/form-data` 接收 |
+| 内容提取 | `src/lib/file-text.ts` | 实现 txt/md/docx 文本提取库 |
+| UI 增强 | `src/features/saas/project/SourceEditorPanel.tsx` | 新增上传文件按钮，上传后自动填充编辑器 |
+
+### 6.4 多格式导出增强 (DOCX / CSV)（2 天）
+
+| 步骤 | 涉及文件 | 任务 |
+|------|---------|------|
+| 库引入 | `package.json` | 引入 `docx`, `papaparse` 或类似库 |
+| 服务实现 | `src/server/projects/export-service.ts` | 实现分镜镜头数据转 CSV；剧本/分镜转 DOCX |
+| 路由更新 | `src/app/api/artifacts/[artifactId]/download/route.ts` | 支持 `format=docx|csv` 参数 |
+
+### 6.5 用量权益可视化增强（2 天）
+
+| 步骤 | 涉及文件 | 任务 |
+|------|---------|------|
+| 数据接口 | `src/app/api/billing/usage/route.ts` | 返回当前月 credits 消耗明细（按项目、按任务类型） |
+| UI 展示 | `src/features/saas/BillingClient.tsx` | 增加饼图/柱状图展示用量分布 |
+
+---
+
+## 11. 每日里程碑 (v4.0)
+
+| 工作日 | 目标 | 关键交付物 |
+|--------|------|-----------|
+| D48-D50 | 分镜结构化 JSON 输出 | StoryboardPanel 镜头视图 |
+| D51-D53 | 集级/场景级选择生成 | 选择生成弹窗 |
+| D54-D55 | 文件上传支持 | SourceEditorPanel 上传按钮 |
+| D56-D57 | DOCX / CSV 导出 | 导出中心新格式 |
+| D58-D59 | 用量权益可视化 | BillingClient 用量图表 |
+
+---
+
+## 12. 实施任务清单 (v4.0)
+
+### Phase 6：v4.0 增强 (12 天)
+
+#### 6.1 分镜结构化 JSON 输出
+- [x] 修改 `entities.ts` — 定义 `StoryboardShot` 接口
+- [x] 升级分镜提示词 — 要求输出 `[SHOTS_JSON]` 块
+- [x] 修改 `run-storyboard-generation.ts` — 实现 JSON 提取与校验
+- [x] 修改 `StoryboardPanel.tsx` — 渲染结构化镜头卡片
+
+#### 6.2 集级/场景级选择生成
+- [x] 修改 `contracts.ts` — 新增 `selection` 字段
+- [x] 修改 `Job API` — 处理按集数过滤逻辑
+- [x] 修改 `ProjectWorkspaceClient.tsx` — 剧本 Tab 范围选择 UI（支持版本 / 集数 / 场景）
+
+#### 6.3 文件上传支持
+- [x] 实现 `src/lib/file-text.ts` — docx/txt 解析
+- [x] 修改 `Source API` — 允许上传并持久化
+- [x] 修改 `SourceEditorPanel.tsx` — 集成上传 UI
+
+#### 6.4 多格式导出增强
+- [x] 引入 `docx` 等依赖
+- [x] 实现剧本 .docx 导出模板
+- [x] 实现分镜 .csv 导出逻辑
+
+#### 6.5 用量权益可视化增强
+- [x] 创建 `usage` API 路由
+- [x] 集成到 `BillingClient.tsx` 展示页面

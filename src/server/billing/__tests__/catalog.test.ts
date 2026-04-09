@@ -43,6 +43,9 @@ describe('billing catalog invariants', () => {
         currencies: ['USD'],
       },
     });
+
+    expect(PLAN_CATALOG.creator.prices.USD.amountCents).toBe(1_990);
+    expect(PLAN_CATALOG.pro.prices.USD.amountCents).toBe(2_900);
   });
 
   it('keeps only the USD credit packs for 50, 200, and 500 credits', () => {

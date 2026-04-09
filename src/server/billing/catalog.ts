@@ -97,7 +97,7 @@ const PLAN_DEFINITIONS: Record<PlanKey, PlanCatalogDefinition> = {
     },
     pricingRegion: ['global'],
     billingInterval: 'monthly',
-    monthlyPriceCents: 990,
+    monthlyPriceCents: 1_990,
     monthlyCredits: 200,
     entitlements: {
       maxProjects: 15,

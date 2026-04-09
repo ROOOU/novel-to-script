@@ -41,6 +41,40 @@ export function cleanText(raw: string): string {
   return text;
 }
 
+export function truncateTextForLLM(
+  text: string,
+  options: {
+    maxChars: number;
+    maxBytes?: number;
+  }
+): string {
+  const { maxChars, maxBytes } = options;
+  const normalized = text.trim();
+  if (!normalized) {
+    return '';
+  }
+
+  let candidate = normalized.slice(0, maxChars).trim();
+  if (!maxBytes) {
+    return candidate;
+  }
+
+  while (candidate && Buffer.byteLength(candidate, 'utf8') > maxBytes) {
+    candidate = candidate.slice(0, Math.max(0, candidate.length - 200)).trim();
+  }
+
+  if (!candidate) {
+    return normalized.slice(0, Math.min(maxChars, 500)).trim();
+  }
+
+  const lastParagraphBreak = candidate.lastIndexOf('\n\n');
+  if (lastParagraphBreak > 0 && lastParagraphBreak >= Math.floor(candidate.length * 0.6)) {
+    return candidate.slice(0, lastParagraphBreak).trim();
+  }
+
+  return candidate;
+}
+
 /** 智能分章 */
 export function splitChapters(text: string): Chapter[] {
   // 常见章节标题正则

@@ -6,7 +6,17 @@ export interface StoryboardGenerateRequest {
   safeMode?: boolean;
 }
 
+export type StoryboardGenerationScope = 'all' | 'selection';
+
+export interface StoryboardGenerationSelection {
+  artifactIds?: string[];
+  episodeNumbers?: number[];
+  sceneIds?: string[];
+}
+
 export interface StoryboardGenerateRequestV2 extends StoryboardGenerateRequest {
+  scope?: StoryboardGenerationScope;
+  selection?: StoryboardGenerationSelection;
   scriptArtifactIds?: string[];
 }
 

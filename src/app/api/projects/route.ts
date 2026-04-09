@@ -30,7 +30,23 @@ export async function POST(request: NextRequest) {
     return response;
   }
 
-  const body = createProjectSchema.parse(await request.json());
+  let body: z.infer<typeof createProjectSchema>;
+  try {
+    body = createProjectSchema.parse(await request.json());
+  } catch (error) {
+    const message =
+      error instanceof z.ZodError
+        ? error.issues[0]?.message ?? 'INVALID_PROJECT_PAYLOAD'
+        : 'INVALID_PROJECT_PAYLOAD';
+    return NextResponse.json(
+      {
+        ok: false,
+        error: message,
+      },
+      { status: 400 }
+    );
+  }
+
   const project = await createProject({
     organizationId: viewer.organization.id,
     workspaceId: viewer.workspace.id,

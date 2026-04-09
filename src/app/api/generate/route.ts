@@ -4,10 +4,7 @@ import {
   type ScriptGenerationEvent,
   type ScriptGenerationRequest,
 } from '@/features/script-generation/contracts';
-import {
-  getScriptGenerationRequestError,
-  runScriptGeneration,
-} from '@/server/script-generation/application/run-script-generation';
+import { runScriptGeneration } from '@/server/script-generation/application/run-script-generation';
 import {
   applyPlatformResponseHeaders,
   createPlatformJsonErrorResponse,
@@ -23,6 +20,7 @@ import {
   resolvePlatformLLMConfig,
 } from '@/server/shared/platform';
 import { createSSEStreamResponse } from '@/server/shared/sse';
+import { scriptGenerationPayloadSchema } from '@/app/api/projects/[projectId]/jobs/schema';
 
 export async function POST(request: NextRequest) {
   const rateLimit = checkRateLimit(request, { scope: 'generate' });
@@ -35,16 +33,23 @@ export async function POST(request: NextRequest) {
   });
 
   try {
+    let requestBody: unknown;
+    try {
+      requestBody = await request.json();
+    } catch {
+      return createPlatformJsonErrorResponse(platformContext, '请求体不是合法 JSON', 400);
+    }
+
+    const validation = scriptGenerationPayloadSchema.safeParse(requestBody);
+    if (!validation.success) {
+      return createPlatformJsonErrorResponse(platformContext, '缺少必要参数', 400);
+    }
+
+    const body = validation.data as ScriptGenerationRequest;
     const runtime = getPlatformRuntime();
-    const body = await request.json() as ScriptGenerationRequest;
     const runtimeWorkspaceId = resolveRuntimeWorkspaceId(platformContext.workspaceId);
     const usageSnapshot = await runtime.usageMeter.snapshot(runtimeWorkspaceId);
     const activeJobs = await runtime.generationJobs.listActiveByWorkspaceId(runtimeWorkspaceId);
-
-    const validationError = getScriptGenerationRequestError(body);
-    if (validationError) {
-      return createPlatformJsonErrorResponse(platformContext, validationError, 400);
-    }
 
     const platformAccess = evaluatePlatformFeatureAccess(platformContext, {
       feature: 'script-generation',

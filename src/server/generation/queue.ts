@@ -1,6 +1,6 @@
+import { after } from 'next/server';
 import { Queue, Worker, type JobsOptions } from 'bullmq';
 import type { ConnectionOptions } from 'bullmq';
-import { processPersistedGenerationJob } from './processor';
 
 export type ProjectGenerationQueueMode = 'inline' | 'bullmq';
 
@@ -53,9 +53,15 @@ export function createProjectGenerationScheduler(
   const queueFactory = dependencies.queueFactory ?? createBullmqQueue;
   const workerFactory = dependencies.workerFactory ?? createBullmqWorker;
   const inlineScheduler = dependencies.inlineScheduler ?? ((jobId: string) => {
-    queueMicrotask(() => {
-      void processPersistedGenerationJob(jobId);
-    });
+    try {
+      after(async () => {
+        await processQueuedProjectGenerationJob(jobId);
+      });
+    } catch {
+      queueMicrotask(() => {
+        void processQueuedProjectGenerationJob(jobId);
+      });
+    }
   });
 
   let queue: QueueLike | null = null;
@@ -72,7 +78,7 @@ export function createProjectGenerationScheduler(
     }
 
     if (!worker) {
-      worker = workerFactory(redisUrl, processPersistedGenerationJob);
+      worker = workerFactory(redisUrl, processQueuedProjectGenerationJob);
     }
   }
 
@@ -111,6 +117,11 @@ export function createProjectGenerationScheduler(
       return mode;
     },
   };
+}
+
+async function processQueuedProjectGenerationJob(jobId: string) {
+  const { processPersistedGenerationJob } = await import('./processor');
+  await processPersistedGenerationJob(jobId);
 }
 
 function createBullmqQueue(redisUrl: string): QueueLike {

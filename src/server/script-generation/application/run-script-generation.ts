@@ -1,4 +1,4 @@
-import { cleanText } from '@/lib/preprocessor';
+import { cleanText, truncateTextForLLM } from '@/lib/preprocessor';
 import { analyzeNovel, generateOutline, generateScript } from '@/lib/llm';
 import { parseJsonLike } from '@/lib/json-parser';
 import { delay } from '@/lib/timing';
@@ -6,6 +6,7 @@ import { type NovelAnalysis, type OutlineEntry } from '@/lib/types';
 import {
   type ScriptGenerationRequest,
 } from '@/features/script-generation/contracts';
+import { withProgressHeartbeat } from '@/server/generation/progress-heartbeat';
 import { buildScriptUsageEvent, type ScriptGenerationExecutionOptions } from './types';
 
 export function getScriptGenerationRequestError(
@@ -44,6 +45,9 @@ export async function runScriptGeneration(
     onArtifact,
   }: ScriptGenerationExecutionOptions
 ): Promise<void> {
+  const maxAnalysisChars = Number(process.env.NOVELSCRIPT_ANALYSIS_MAX_CHARS ?? '5000');
+  const maxAnalysisBytes = Number(process.env.NOVELSCRIPT_ANALYSIS_MAX_BYTES ?? '18000');
+
   usageMeter?.record(
     buildScriptUsageEvent(context, body.text.length, 'character', {
       phase: 'request_received',
@@ -61,7 +65,10 @@ export async function runScriptGeneration(
   send({ step: 'preprocessing', message: '正在预处理文本...' });
   await onProgress?.({ progress: 5, currentStep: 'preprocessing' });
   const cleanedText = cleanText(body.text);
-  const textForAnalysis = cleanedText.slice(0, 8000);
+  const textForAnalysis = truncateTextForLLM(cleanedText, {
+    maxChars: Number.isFinite(maxAnalysisChars) ? maxAnalysisChars : 5000,
+    maxBytes: Number.isFinite(maxAnalysisBytes) ? maxAnalysisBytes : 18000,
+  });
 
   let analysisJson: string;
   if (body.analysis) {
@@ -81,7 +88,14 @@ export async function runScriptGeneration(
       message: '正在分析小说内容（角色、情节、冲突点）...',
     });
     await onProgress?.({ progress: 15, currentStep: 'analyzing' });
-    const analysisRaw = await analyzeNovel(textForAnalysis, body.genre, llmConfig);
+    const analysisRaw = await withProgressHeartbeat(
+      {
+        onProgress,
+        progress: 15,
+        currentStep: 'analyzing',
+      },
+      () => analyzeNovel(textForAnalysis, body.genre, llmConfig)
+    );
     const analysisResult = parseJsonLike<NovelAnalysis>(analysisRaw);
     analysisJson = analysisResult.ok
       ? JSON.stringify(analysisResult.value, null, 2)
@@ -104,11 +118,19 @@ export async function runScriptGeneration(
 
   send({ step: 'outlining', message: '正在生成分集大纲...' });
   await onProgress?.({ progress: 40, currentStep: 'outlining' });
-  const outlineRaw = await generateOutline(
-    analysisJson,
-    body.genre,
-    body.config.episodeCount,
-    llmConfig
+  const outlineRaw = await withProgressHeartbeat(
+    {
+      onProgress,
+      progress: 40,
+      currentStep: 'outlining',
+    },
+    () =>
+      generateOutline(
+        analysisJson,
+        body.genre,
+        body.config.episodeCount,
+        llmConfig
+      )
   );
   const outlineResult = parseJsonLike<OutlineEntry[]>(outlineRaw);
   const outlineJson = outlineResult.ok
@@ -143,25 +165,35 @@ export async function runScriptGeneration(
     });
 
     let scriptContent = '';
-    for await (const chunk of generateScript(
-      outlineJson,
-      analysisJson,
-      body.genre,
-      episode,
+    await withProgressHeartbeat(
       {
-        episodeDuration: body.config.episodeDuration,
-        style: body.config.style,
+        onProgress,
+        progress: Math.min(95, 50 + (episode - 1) * (45 / episodeCount)),
+        currentStep: `generating_episode_${episode}`,
+        outputSummary: `episode ${episode}/${episodeCount}`,
       },
-      llmConfig
-    )) {
-      scriptContent += chunk;
-      send({
-        step: 'streaming',
-        episode,
-        chunk,
-        content: scriptContent,
-      });
-    }
+      async () => {
+        for await (const chunk of generateScript(
+          outlineJson,
+          analysisJson,
+          body.genre,
+          episode,
+          {
+            episodeDuration: body.config.episodeDuration,
+            style: body.config.style,
+          },
+          llmConfig
+        )) {
+          scriptContent += chunk;
+          send({
+            step: 'streaming',
+            episode,
+            chunk,
+            content: scriptContent,
+          });
+        }
+      }
+    );
 
     send({
       step: 'episode_done',

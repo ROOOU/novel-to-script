@@ -18,7 +18,7 @@ const generationJobAccess = createInMemoryGenerationJobAccessStore();
 const usageMeter: UsageMeter = createInMemoryUsageMeter();
 
 export function getPlatformRuntime() {
-  const backend = shouldUseDatabaseRuntime() ? 'database' : 'file';
+  const backend = resolveRuntimeBackend();
   if (!cachedRepositories || cachedBackend !== backend) {
     cachedRepositories =
       backend === 'database'
@@ -32,4 +32,15 @@ export function getPlatformRuntime() {
     generationJobAccess,
     usageMeter,
   };
+}
+
+function resolveRuntimeBackend(): 'database' | 'file' {
+  const forcedBackend = process.env.NOVELSCRIPT_RUNTIME_BACKEND?.trim().toLowerCase();
+  if (forcedBackend === 'file') {
+    return 'file';
+  }
+  if (forcedBackend === 'database') {
+    return 'database';
+  }
+  return shouldUseDatabaseRuntime() ? 'database' : 'file';
 }

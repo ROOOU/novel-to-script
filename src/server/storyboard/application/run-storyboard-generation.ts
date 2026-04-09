@@ -7,18 +7,37 @@ import {
 import {
   type StoryboardGenerateRequestV2,
 } from '@/features/storyboard/contracts';
-import { getPlatformRuntime } from '@/server/shared/platform';
+import { artifactBelongsToScope } from '@/server/auth/viewer-access';
+import {
+  getPlatformRuntime,
+  type StoryboardMetadata,
+  type StoryboardShot,
+} from '@/server/shared/platform';
+import { withProgressHeartbeat } from '@/server/generation/progress-heartbeat';
 import { extractCharacters, extractScenes } from './extract-helpers';
 import { buildStoryboardUsageEvent, type StoryboardGenerationExecutionOptions } from './types';
 
 export function getStoryboardRequestError(
   body: Partial<StoryboardGenerateRequestV2> | null | undefined
 ): string | null {
-  if (normalizeStoryboardArtifactIds(body?.scriptArtifactIds).length > 0) {
+  const scope = normalizeStoryboardScope(body?.scope);
+  const selection = normalizeStoryboardSelection(body?.selection);
+  const hasScriptArtifacts = normalizeStoryboardArtifactIds(body?.scriptArtifactIds).length > 0;
+  const hasSelectedArtifacts = selection.artifactIds.length > 0;
+
+  if (hasScriptArtifacts || (scope === 'selection' && hasSelectedArtifacts)) {
+    if (scope === 'selection' && !hasStoryboardSelectionCriteria(selection)) {
+      return '请选择需要生成分镜的集数、场景或剧本工件';
+    }
+
     return null;
   }
 
   if (typeof body?.scriptText === 'string' && body.scriptText.trim()) {
+    if (scope === 'selection' && hasStoryboardSelectionCriteria(selection)) {
+      return '按集数或场景筛选时，请选择剧本工件作为输入来源';
+    }
+
     return null;
   }
 
@@ -37,7 +56,11 @@ export async function runStoryboardGeneration(
     onArtifact,
   }: StoryboardGenerationExecutionOptions
 ): Promise<void> {
-  const source = await resolveStoryboardScriptSource(body);
+  const source = await resolveStoryboardScriptSource(body, {
+    organizationId: context.organizationId,
+    workspaceId: context.workspaceId,
+    projectId: context.projectId,
+  });
   const scriptText = source.scriptText;
 
   usageMeter?.record(
@@ -92,26 +115,54 @@ export async function runStoryboardGeneration(
       );
 
   try {
-    const fullContent = await streamStoryboard(systemPrompt, userPrompt, send, llmConfig);
+    const fullContent = await withProgressHeartbeat(
+      {
+        onProgress,
+        progress: 30,
+        currentStep: 'generating',
+        outputSummary: 'storyboard drafting',
+      },
+      () => streamStoryboard(systemPrompt, userPrompt, send, llmConfig)
+    );
+    const parsedOutput = resolveStoryboardOutput(fullContent);
+    const metadata: StoryboardMetadata = {
+      safeMode: Boolean(body.safeMode),
+      characters,
+      scenes,
+      shots: parsedOutput.shots,
+      shotCount: parsedOutput.shots.length,
+      ...(parsedOutput.parseError ? { parseError: parsedOutput.parseError } : {}),
+      ...(parsedOutput.parseFallbackMode ? { parseFallbackMode: parsedOutput.parseFallbackMode } : {}),
+      ...(parsedOutput.invalidShotIndexes && parsedOutput.invalidShotIndexes.length > 0
+        ? { invalidShotIndexes: parsedOutput.invalidShotIndexes }
+        : {}),
+      ...(parsedOutput.invalidShotErrors && parsedOutput.invalidShotErrors.length > 0
+        ? { invalidShotErrors: parsedOutput.invalidShotErrors }
+        : {}),
+      ...(source.sourceScriptArtifactIds.length > 0
+        ? { sourceScriptArtifactIds: source.sourceScriptArtifactIds }
+        : {}),
+    };
 
     send({
       step: 'done',
-      message: body.safeMode ? '安全影视化模式生成完成！' : '分镜提示词生成完成！',
-      content: fullContent,
+      message: parsedOutput.parseError
+        ? parsedOutput.shots.length > 0
+          ? parsedOutput.parseFallbackMode === 'partial-text-derived'
+            ? '分镜提示词生成完成，部分结构化镜头已保留，其余镜头已从文本补齐。'
+            : '分镜提示词生成完成，结构化 JSON 未完全命中，已从文本补齐镜头清单。'
+          : '分镜提示词生成完成，结构化镜头清单解析失败，已保留文本结果。'
+        : body.safeMode
+          ? '安全影视化模式生成完成！'
+          : '分镜提示词生成完成！',
+      content: parsedOutput.textContent,
     });
     await onArtifact?.({
       kind: 'storyboard',
       title: '分镜提示词',
       format: 'text/plain',
-      content: fullContent,
-      metadata: {
-        safeMode: Boolean(body.safeMode),
-        characters,
-        scenes,
-        ...(source.sourceScriptArtifactIds.length > 0
-          ? { sourceScriptArtifactIds: source.sourceScriptArtifactIds }
-          : {}),
-      },
+      content: parsedOutput.textContent,
+      metadata,
     });
     usageMeter?.record(
       buildStoryboardUsageEvent(context, 1, 'request', {
@@ -120,7 +171,15 @@ export async function runStoryboardGeneration(
         jobId,
       })
     );
-    await onProgress?.({ progress: 100, currentStep: 'done', outputSummary: 'storyboard generated' });
+    await onProgress?.({
+      progress: 100,
+      currentStep: 'done',
+      outputSummary: parsedOutput.parseError
+        ? parsedOutput.shots.length > 0
+          ? `storyboard generated;shots:${parsedOutput.shots.length};fallback:${parsedOutput.parseFallbackMode ?? 'text-derived'}`
+          : `storyboard generated;shots:${parsedOutput.shots.length};fallback:text-only`
+        : `storyboard generated;shots:${parsedOutput.shots.length}`,
+    });
   } catch (error) {
     if (!isContentPolicyError(error)) {
       throw error;
@@ -159,16 +218,569 @@ async function streamStoryboard(
   return fullContent;
 }
 
+export interface ParsedStoryboardOutput {
+  textContent: string;
+  shots: StoryboardShot[];
+  parseError?: string | null;
+  parseFallbackMode?: 'text-derived' | 'partial-text-derived' | null;
+  invalidShotIndexes?: number[];
+  invalidShotErrors?: string[];
+}
+
+const STORYBOARD_JSON_BLOCK_PATTERN =
+  /\[SHOTS_JSON\]\s*(?:```json\s*([\s\S]*?)\s*```|([\s\S]*?))(?:\s*\[\/SHOTS_JSON\])?/gi;
+const STORYBOARD_JSON_FENCE_PATTERN = /```json\s*([\s\S]*?)\s*```/gi;
+const STORYBOARD_GENERIC_FENCE_PATTERN = /```(?:[a-zA-Z0-9_-]+)?\s*([\s\S]*?)\s*```/gi;
+const STORYBOARD_SHOT_BLOCK_PATTERN =
+  /((?:分镜|镜头|Shot)\s*[#:：]?\s*[A-Za-z①②③④⑤⑥⑦⑧⑨⑩\d]+\s*[\s\S]*?)(?=(?:\n\s*(?:分镜|镜头|Shot)\s*[#:：]?\s*[A-Za-z①②③④⑤⑥⑦⑧⑨⑩\d]+)|$)/giu;
+
+const STORYBOARD_SHOT_REQUIRED_FIELDS = [
+  'sceneId',
+  'shotId',
+  'shotType',
+  'camera',
+  'composition',
+  'motion',
+  'subject',
+  'environment',
+  'lighting',
+  'audioHint',
+  'videoPrompt',
+] as const satisfies ReadonlyArray<keyof StoryboardShot>;
+
+const STORYBOARD_SHOT_FIELD_ALIASES: Record<keyof StoryboardShot, string[]> = {
+  sceneId: ['sceneId', 'scene_id', 'scene'],
+  shotId: ['shotId', 'shot_id', 'id'],
+  shotType: ['shotType', 'shot_type', 'type'],
+  camera: ['camera', 'cameraMovement', 'camera_motion', 'camera_move'],
+  composition: ['composition', 'framing', 'layout'],
+  motion: ['motion', 'action', 'movement'],
+  subject: ['subject', 'character', 'focus', 'target'],
+  environment: ['environment', 'sceneEnvironment', 'setting', 'location'],
+  lighting: ['lighting', 'light', 'lightingSetup'],
+  audioHint: ['audioHint', 'audio_hint', 'sound', 'soundHint', 'audio'],
+  videoPrompt: ['videoPrompt', 'video_prompt', 'prompt', 'imagePrompt'],
+};
+
+export function parseStoryboardOutput(fullContent: string): ParsedStoryboardOutput {
+  const trimmedContent = fullContent.trim();
+  const extractedBlock = extractStoryboardJsonBlock(trimmedContent);
+  if (!extractedBlock) {
+    throw new Error('STORYBOARD_SHOTS_JSON_MISSING');
+  }
+
+  return {
+    textContent: extractedBlock.textContent,
+    shots: parseStoryboardShots(extractedBlock.jsonSource),
+  };
+}
+
+function parseStoryboardShots(jsonSource: string): StoryboardShot[] {
+  const parseCandidates = Array.from(
+    new Set(
+      [jsonSource, repairStoryboardJsonSource(jsonSource)]
+        .map((candidate) => candidate.trim())
+        .filter((candidate) => candidate.length > 0)
+    )
+  );
+
+  let lastError: Error | null = null;
+
+  for (const candidate of parseCandidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      return normalizeStoryboardShots(parsed);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error('STORYBOARD_SHOTS_JSON_INVALID');
+    }
+  }
+
+  throw lastError ?? new Error('STORYBOARD_SHOTS_JSON_INVALID');
+}
+
+function normalizeStoryboardShots(parsed: unknown): StoryboardShot[] {
+  const normalizedShots = resolveStoryboardShotCollection(parsed);
+
+  if (!normalizedShots || normalizedShots.length === 0) {
+    throw new Error('STORYBOARD_SHOTS_JSON_EMPTY');
+  }
+
+  return normalizedShots.map((entry, index) => validateStoryboardShot(entry, index));
+}
+
+function resolveStoryboardShotCollection(parsed: unknown): unknown[] | null {
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  if (!isRecord(parsed)) {
+    return null;
+  }
+
+  for (const key of ['shots', 'storyboard', 'storyboards']) {
+    if (Array.isArray(parsed[key])) {
+      return parsed[key] as unknown[];
+    }
+  }
+
+  for (const key of ['data', 'result', 'payload', 'output']) {
+    const nested = resolveStoryboardShotCollection(parsed[key]);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  for (const value of Object.values(parsed)) {
+    if (!Array.isArray(value) || value.length === 0) {
+      continue;
+    }
+
+    const looksLikeShots = value.some(
+      (entry) => isRecord(entry) && (typeof entry.sceneId === 'string' || typeof entry.shotId === 'string')
+    );
+    if (looksLikeShots) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function validateStoryboardShot(value: unknown, index: number): StoryboardShot {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`STORYBOARD_SHOT_INVALID:${index}`);
+  }
+
+  const shotRecord = value as Record<string, unknown>;
+  const validatedShot = {} as StoryboardShot;
+
+  for (const field of STORYBOARD_SHOT_REQUIRED_FIELDS) {
+    validatedShot[field] = readRequiredShotString(shotRecord, field, index);
+  }
+
+  return validatedShot;
+}
+
+function readRequiredShotString(
+  record: Record<string, unknown>,
+  field: keyof StoryboardShot,
+  index: number
+): string {
+  const value = readShotFieldValue(record, field);
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`STORYBOARD_SHOT_FIELD_INVALID:${index}:${field}`);
+  }
+
+  return value.trim();
+}
+
+function readShotFieldValue(record: Record<string, unknown>, field: keyof StoryboardShot): unknown {
+  for (const alias of STORYBOARD_SHOT_FIELD_ALIASES[field]) {
+    const value = record[alias];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function sanitizeStoryboardJsonSource(source: string): string {
+  let normalized = source.replace(/\[\/SHOTS_JSON\]\s*$/i, '').trim();
+  const fencedMatch = normalized.match(/^```json\s*([\s\S]*?)\s*```$/i);
+  if (fencedMatch) {
+    normalized = fencedMatch[1]?.trim() ?? '';
+  }
+
+  const firstJsonTokenIndex = normalized.search(/[\[{]/);
+  if (firstJsonTokenIndex > 0) {
+    normalized = normalized.slice(firstJsonTokenIndex).trim();
+  }
+
+  const lastArrayIndex = normalized.lastIndexOf(']');
+  const lastObjectIndex = normalized.lastIndexOf('}');
+  const lastJsonBoundary = Math.max(lastArrayIndex, lastObjectIndex);
+  if (lastJsonBoundary >= 0) {
+    normalized = normalized.slice(0, lastJsonBoundary + 1).trim();
+  }
+
+  return normalized;
+}
+
+function repairStoryboardJsonSource(source: string): string {
+  return sanitizeStoryboardJsonSource(source)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, '\'')
+    .replace(/,\s*([}\]])/g, '$1');
+}
+
+function resolveStoryboardOutput(fullContent: string): ParsedStoryboardOutput {
+  const trimmedContent = fullContent.trim();
+  const extractedBlock = extractStoryboardJsonBlock(trimmedContent);
+
+  try {
+    return parseStoryboardOutput(fullContent);
+  } catch (error) {
+    const parseError = error instanceof Error ? error.message : 'STORYBOARD_PARSE_FAILED';
+    const fallbackTextContent = stripStoryboardStructuredTail(fullContent);
+    if (!fallbackTextContent) {
+      throw error;
+    }
+
+    const inferredShots = inferStoryboardShotsFromText(fallbackTextContent);
+    const salvagedResult =
+      extractedBlock && inferredShots.length > 0
+        ? salvageStoryboardShots(extractedBlock.jsonSource, inferredShots)
+        : null;
+
+    if (salvagedResult && salvagedResult.shots.length > 0) {
+      return {
+        textContent: fallbackTextContent,
+        shots: salvagedResult.shots,
+        parseError,
+        parseFallbackMode: 'partial-text-derived',
+        invalidShotIndexes: salvagedResult.invalidShotIndexes,
+        invalidShotErrors: salvagedResult.invalidShotErrors,
+      };
+    }
+
+    return {
+      textContent: fallbackTextContent,
+      shots: inferredShots,
+      parseError,
+      parseFallbackMode: inferredShots.length > 0 ? 'text-derived' : null,
+    };
+  }
+}
+
+function salvageStoryboardShots(
+  jsonSource: string,
+  inferredShots: StoryboardShot[]
+): { shots: StoryboardShot[]; invalidShotIndexes: number[]; invalidShotErrors: string[] } | null {
+  const parseCandidates = Array.from(
+    new Set(
+      [jsonSource, repairStoryboardJsonSource(jsonSource)]
+        .map((candidate) => candidate.trim())
+        .filter((candidate) => candidate.length > 0)
+    )
+  );
+
+  for (const candidate of parseCandidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      const normalizedShots = resolveStoryboardShotCollection(parsed);
+      if (!normalizedShots || normalizedShots.length === 0) {
+        continue;
+      }
+
+      const salvagedShots: StoryboardShot[] = [];
+      const invalidShotIndexes: number[] = [];
+      const invalidShotErrors: string[] = [];
+      for (const [index, entry] of normalizedShots.entries()) {
+        try {
+          salvagedShots.push(validateStoryboardShot(entry, index));
+        } catch (error) {
+          invalidShotIndexes.push(index);
+          invalidShotErrors.push(error instanceof Error ? error.message : `STORYBOARD_SHOT_INVALID:${index}`);
+          const inferredShot = inferredShots[index];
+          if (inferredShot) {
+            salvagedShots.push(inferredShot);
+          }
+        }
+      }
+
+      if (salvagedShots.length > 0) {
+        return { shots: salvagedShots, invalidShotIndexes, invalidShotErrors };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function extractStoryboardJsonBlock(
+  trimmedContent: string
+): { textContent: string; jsonSource: string } | null {
+  const taggedMatches = Array.from(trimmedContent.matchAll(STORYBOARD_JSON_BLOCK_PATTERN));
+  const taggedMatch = taggedMatches.at(-1);
+  if (taggedMatch && taggedMatch.index !== undefined) {
+    return {
+      textContent: trimmedContent.slice(0, taggedMatch.index).trim(),
+      jsonSource: sanitizeStoryboardJsonSource(taggedMatch[1] ?? taggedMatch[2] ?? ''),
+    };
+  }
+
+  const jsonFenceMatches = Array.from(trimmedContent.matchAll(STORYBOARD_JSON_FENCE_PATTERN));
+  const lastJsonFenceMatch = jsonFenceMatches.at(-1);
+  if (!lastJsonFenceMatch || lastJsonFenceMatch.index === undefined) {
+    const genericFenceMatches = Array.from(trimmedContent.matchAll(STORYBOARD_GENERIC_FENCE_PATTERN));
+    const genericFenceMatch = [...genericFenceMatches]
+      .reverse()
+      .find((match) => match.index !== undefined && looksLikeStoryboardJsonCandidate(match[1] ?? ''));
+    if (!genericFenceMatch || genericFenceMatch.index === undefined) {
+      return null;
+    }
+
+    return {
+      textContent: trimmedContent.slice(0, genericFenceMatch.index).trim(),
+      jsonSource: sanitizeStoryboardJsonSource(genericFenceMatch[1] ?? ''),
+    };
+  }
+
+  return {
+    textContent: trimmedContent.slice(0, lastJsonFenceMatch.index).trim(),
+    jsonSource: sanitizeStoryboardJsonSource(lastJsonFenceMatch[1] ?? ''),
+  };
+}
+
+function stripStoryboardStructuredTail(fullContent: string): string {
+  const trimmedContent = fullContent.trim();
+  const taggedMatch = Array.from(trimmedContent.matchAll(STORYBOARD_JSON_BLOCK_PATTERN)).at(-1);
+  if (taggedMatch && taggedMatch.index !== undefined) {
+    return trimmedContent.slice(0, taggedMatch.index).trim();
+  }
+
+  const jsonFenceMatches = Array.from(trimmedContent.matchAll(STORYBOARD_JSON_FENCE_PATTERN));
+  const lastJsonFenceMatch = jsonFenceMatches.at(-1);
+  if (lastJsonFenceMatch && lastJsonFenceMatch.index !== undefined) {
+    return trimmedContent.slice(0, lastJsonFenceMatch.index).trim();
+  }
+
+  const genericFenceMatches = Array.from(trimmedContent.matchAll(STORYBOARD_GENERIC_FENCE_PATTERN));
+  const genericFenceMatch = [...genericFenceMatches]
+    .reverse()
+    .find((match) => match.index !== undefined && looksLikeStoryboardJsonCandidate(match[1] ?? ''));
+  if (genericFenceMatch && genericFenceMatch.index !== undefined) {
+    return trimmedContent.slice(0, genericFenceMatch.index).trim();
+  }
+
+  return trimmedContent;
+}
+
+function looksLikeStoryboardJsonCandidate(source: string): boolean {
+  const normalized = sanitizeStoryboardJsonSource(source);
+  if (!/^[\[{]/.test(normalized)) {
+    return false;
+  }
+
+  return /sceneId|shotId|shots|storyboard/i.test(normalized);
+}
+
+function inferStoryboardShotsFromText(textContent: string): StoryboardShot[] {
+  const sections = splitStoryboardTextSections(textContent);
+  const inferredShots: StoryboardShot[] = [];
+
+  for (const [sectionIndex, section] of sections.entries()) {
+    const shotBlocks = Array.from(section.content.matchAll(STORYBOARD_SHOT_BLOCK_PATTERN));
+    for (const [shotIndex, shotBlock] of shotBlocks.entries()) {
+      const blockText = shotBlock[1]?.trim();
+      if (!blockText) {
+        continue;
+      }
+
+      inferredShots.push(
+        buildInferredStoryboardShot(
+          blockText,
+          section.sceneName ?? `场景 ${sectionIndex + 1}`,
+          sectionIndex,
+          shotIndex
+        )
+      );
+    }
+  }
+
+  return inferredShots;
+}
+
+function splitStoryboardTextSections(textContent: string): Array<{ sceneName: string | null; content: string }> {
+  const lines = textContent
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const sections: Array<{ sceneName: string | null; content: string }> = [];
+  let currentSceneName: string | null = null;
+  let buffer: string[] = [];
+
+  const flush = () => {
+    const content = buffer.join('\n').trim();
+    if (!content) {
+      return;
+    }
+
+    sections.push({
+      sceneName: currentSceneName,
+      content,
+    });
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const sceneMatch = line.match(/^场景[:：]\s*(.+)$/);
+    if (sceneMatch) {
+      flush();
+      currentSceneName = sceneMatch[1]?.trim() ?? null;
+      continue;
+    }
+
+    buffer.push(line);
+  }
+
+  flush();
+
+  return sections.length > 0 ? sections : [{ sceneName: null, content: textContent }];
+}
+
+function buildInferredStoryboardShot(
+  blockText: string,
+  fallbackSceneName: string,
+  sectionIndex: number,
+  shotIndex: number
+): StoryboardShot {
+  const compactBlock = blockText.replace(/\s+/g, ' ').trim();
+  const subjects = Array.from(
+    new Set(
+      Array.from(compactBlock.matchAll(/🧑\s*([^\s，。-]+)-基础形象-基础形象/g))
+        .map((match) => match[1]?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const sceneId = `S${String(sectionIndex + 1).padStart(2, '0')}`;
+  const shotId = `${sceneId}-SH${String(shotIndex + 1).padStart(2, '0')}`;
+  const environment =
+    readLabeledClause(compactBlock, '场景图片：🖼️')?.replace(/_0\b/g, '').trim() ?? fallbackSceneName;
+  const lensClauses = splitClauseList(readLabeledClause(compactBlock, '镜头：'));
+  const shotType = lensClauses[0] ?? inferShotType(compactBlock);
+  const camera = lensClauses.slice(1).join('，') || inferCameraMotion(compactBlock);
+  const subject = subjects.length > 0 ? subjects.join('、') : inferSubject(compactBlock);
+  const motion = inferShotMotion(compactBlock, subject);
+  const lighting = inferLighting(compactBlock);
+  const audioHint = inferAudioHint(compactBlock);
+  const composition = inferComposition(shotType, subjects.length);
+
+  return {
+    sceneId,
+    shotId,
+    shotType,
+    camera,
+    composition,
+    motion,
+    subject,
+    environment,
+    lighting,
+    audioHint,
+    videoPrompt: [environment, shotType, camera, subject, motion, lighting, audioHint]
+      .filter(Boolean)
+      .join('，'),
+  };
+}
+
+function readLabeledClause(text: string, label: string): string | null {
+  const index = text.indexOf(label);
+  if (index < 0) {
+    return null;
+  }
+
+  const rest = text.slice(index + label.length);
+  const endIndex = rest.search(/(?:，🧑|，背景[:：]|，音色[:：]|。|$)/);
+  const clause = (endIndex >= 0 ? rest.slice(0, endIndex) : rest).trim();
+  return clause || null;
+}
+
+function splitClauseList(value: string | null): string[] {
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split('，')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
+function inferShotType(text: string): string {
+  return text.match(/(远景|全景|中景|近景|特写|过肩镜头)/)?.[1] ?? '中景';
+}
+
+function inferCameraMotion(text: string): string {
+  const keywords = ['缓慢推进', '快速推进', '固定机位', '平移', '跟拍', '拉远', '仰拍', '俯拍', '环绕拍摄'];
+  return keywords.find((keyword) => text.includes(keyword)) ?? '镜头轻微推进';
+}
+
+function inferSubject(text: string): string {
+  return text.match(/([^\s，。：]+)\s*说[:：]/)?.[1] ?? '主要角色';
+}
+
+function inferShotMotion(text: string, subject: string): string {
+  const cleaned = text
+    .replace(/^(?:分镜|镜头|Shot)\s*[#:：]?\s*[A-Za-z①②③④⑤⑥⑦⑧⑨⑩\d]+\s*\d*s?[:：]?\s*/iu, '')
+    .replace(/场景图片：🖼️[^\s，。]+/g, '')
+    .replace(/镜头：[^。]+?(?=，🧑|，背景[:：]|，音色[:：]|。|$)/g, '')
+    .replace(/🧑\s*[^\s，。-]+-基础形象-基础形象/g, '')
+    .replace(/说：「[^」]*」/g, '')
+    .replace(/音色[:：][^。]+/g, '')
+    .replace(/背景[:：][^。]+/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[，。\s]+|[，。\s]+$/g, '');
+
+  return cleaned || `${subject}执行关键动作`;
+}
+
+function inferLighting(text: string): string {
+  if (text.includes('月光') || text.includes('冷色')) {
+    return '冷色月光与环境补光';
+  }
+
+  if (text.includes('暖光') || text.includes('烛光') || text.includes('暖色')) {
+    return '暖色环境光';
+  }
+
+  if (text.includes('金光') || text.includes('强光')) {
+    return '高对比能量光效';
+  }
+
+  return '场景氛围光';
+}
+
+function inferAudioHint(text: string): string {
+  return text.match(/背景[:：]([^。]+)/)?.[1]?.trim() ?? (text.includes('说：「') ? '人物对白与环境氛围音' : '环境氛围音');
+}
+
+function inferComposition(shotType: string, subjectCount: number): string {
+  if (subjectCount > 1) {
+    return '多人关系构图';
+  }
+
+  return shotType.includes('特写') ? '主体特写构图' : '单人主体构图';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 export interface StoryboardScriptSourceResolution {
   scriptText: string;
   sourceScriptArtifactIds: string[];
 }
 
 export async function resolveStoryboardScriptSource(
-  body: StoryboardGenerateRequestV2
+  body: StoryboardGenerateRequestV2,
+  scope?: {
+    organizationId?: string | null;
+    workspaceId?: string | null;
+    projectId?: string | null;
+  }
 ): Promise<StoryboardScriptSourceResolution> {
-  const sourceScriptArtifactIds = normalizeStoryboardArtifactIds(body.scriptArtifactIds);
-  if (sourceScriptArtifactIds.length === 0) {
+  const sourceScope = normalizeStoryboardScope(body.scope);
+  const selection = normalizeStoryboardSelection(body.selection);
+  const requestedArtifactIds = normalizeStoryboardArtifactIds(body.scriptArtifactIds);
+  const initialArtifactIds =
+    sourceScope === 'selection' && selection.artifactIds.length > 0
+      ? selection.artifactIds
+      : requestedArtifactIds;
+
+  if (initialArtifactIds.length === 0) {
     const fallbackScriptText = body.scriptText?.trim() ?? '';
     if (!fallbackScriptText) {
       throw new Error('请输入剧本文本或剧本工件');
@@ -182,7 +794,7 @@ export async function resolveStoryboardScriptSource(
 
   const runtime = getPlatformRuntime();
   const artifacts = await Promise.all(
-    sourceScriptArtifactIds.map(async (artifactId) => {
+    initialArtifactIds.map(async (artifactId) => {
       const artifact = await runtime.generationArtifacts.getById(artifactId);
       if (!artifact) {
         throw new Error(`SCRIPT_ARTIFACT_NOT_FOUND:${artifactId}`);
@@ -192,18 +804,62 @@ export async function resolveStoryboardScriptSource(
         throw new Error(`SCRIPT_ARTIFACT_KIND_INVALID:${artifactId}`);
       }
 
+      if (
+        scope?.organizationId &&
+        scope?.workspaceId &&
+        !artifactBelongsToScope(artifact, {
+          organizationId: scope.organizationId,
+          workspaceId: scope.workspaceId,
+        })
+      ) {
+        throw new Error(`SCRIPT_ARTIFACT_SCOPE_INVALID:${artifactId}`);
+      }
+
+      if (scope?.projectId && artifact.projectId !== scope.projectId) {
+        throw new Error(`SCRIPT_ARTIFACT_PROJECT_INVALID:${artifactId}`);
+      }
+
       return artifact;
     })
   );
 
-  const scriptText = artifacts
-    .map((artifact, index) => {
-      if (!artifact.content?.trim()) {
-        throw new Error(`SCRIPT_ARTIFACT_EMPTY:${sourceScriptArtifactIds[index]}`);
+  const filteredArtifacts =
+    sourceScope === 'selection'
+      ? applyStoryboardArtifactSelection(artifacts, selection)
+      : artifacts;
+
+  const resolvedArtifacts = filteredArtifacts
+    .map((artifact) => {
+      const filteredContent =
+        sourceScope === 'selection'
+          ? filterArtifactContentBySelection(artifact.content ?? '', selection)
+          : artifact.content?.trim() ?? '';
+
+      if (sourceScope !== 'selection' && !filteredContent) {
+        throw new Error(`SCRIPT_ARTIFACT_EMPTY:${artifact.id}`);
       }
-      return artifact.content;
+
+      if (!filteredContent) {
+        return null;
+      }
+
+      return {
+        artifactId: artifact.id,
+        content: filteredContent,
+      };
     })
-    .join('\n\n');
+    .filter((entry): entry is { artifactId: string; content: string } => entry !== null);
+
+  if (resolvedArtifacts.length === 0) {
+    if (sourceScope === 'selection') {
+      throw new Error('SCRIPT_SELECTION_EMPTY');
+    }
+
+    throw new Error(`SCRIPT_ARTIFACT_EMPTY:${initialArtifactIds[0]}`);
+  }
+
+  const scriptText = resolvedArtifacts.map((artifact) => artifact.content).join('\n\n');
+  const sourceScriptArtifactIds = resolvedArtifacts.map((artifact) => artifact.artifactId);
 
   return {
     scriptText,
@@ -251,4 +907,136 @@ function normalizeStoryboardArtifactIds(ids: string[] | null | undefined): strin
     .filter((id) => id.length > 0);
 
   return Array.from(new Set(normalized));
+}
+
+function normalizeStoryboardScope(scope: StoryboardGenerateRequestV2['scope'] | null | undefined) {
+  return scope === 'selection' ? 'selection' : 'all';
+}
+
+interface NormalizedStoryboardSelection {
+  artifactIds: string[];
+  episodeNumbers: number[];
+  sceneIds: string[];
+}
+
+function normalizeStoryboardSelection(
+  selection: StoryboardGenerateRequestV2['selection'] | null | undefined
+): NormalizedStoryboardSelection {
+  const artifactIds = normalizeStoryboardArtifactIds(selection?.artifactIds);
+  const episodeNumbers = Array.isArray(selection?.episodeNumbers)
+    ? Array.from(
+        new Set(
+          selection.episodeNumbers.filter(
+            (episodeNumber): episodeNumber is number =>
+              Number.isInteger(episodeNumber) && episodeNumber > 0
+          )
+        )
+      )
+    : [];
+  const sceneIds = Array.isArray(selection?.sceneIds)
+    ? Array.from(
+        new Set(
+          selection.sceneIds
+            .map((sceneId) => sceneId.trim())
+            .filter((sceneId) => sceneId.length > 0)
+        )
+      )
+    : [];
+
+  return {
+    artifactIds,
+    episodeNumbers,
+    sceneIds,
+  };
+}
+
+function hasStoryboardSelectionCriteria(selection: NormalizedStoryboardSelection): boolean {
+  return (
+    selection.artifactIds.length > 0 ||
+    selection.episodeNumbers.length > 0 ||
+    selection.sceneIds.length > 0
+  );
+}
+
+function applyStoryboardArtifactSelection<
+  TArtifact extends { id: string; metadata?: Record<string, unknown> | null }
+>(artifacts: TArtifact[], selection: NormalizedStoryboardSelection): TArtifact[] {
+  let filteredArtifacts = artifacts;
+
+  if (selection.episodeNumbers.length > 0) {
+    const allowedEpisodes = new Set(selection.episodeNumbers);
+    filteredArtifacts = filteredArtifacts.filter((artifact) => {
+      const episodeValue = artifact.metadata?.episode;
+      return typeof episodeValue === 'number' && allowedEpisodes.has(episodeValue);
+    });
+  }
+
+  return filteredArtifacts;
+}
+
+function filterArtifactContentBySelection(
+  content: string,
+  selection: NormalizedStoryboardSelection
+): string {
+  const trimmedContent = content.trim();
+  if (!trimmedContent) {
+    return '';
+  }
+
+  if (selection.sceneIds.length === 0) {
+    return trimmedContent;
+  }
+
+  const sceneBlocks = splitScriptIntoSceneBlocks(trimmedContent);
+  const allowedSceneIds = new Set(selection.sceneIds.map((sceneId) => sceneId.toLowerCase()));
+  const filteredBlocks = sceneBlocks.filter((block) =>
+    storyboardSceneBlockMatchesSelection(block, allowedSceneIds)
+  );
+
+  return filteredBlocks.join('\n\n').trim();
+}
+
+function splitScriptIntoSceneBlocks(content: string): string[] {
+  const normalizedContent = content.trim();
+  if (!normalizedContent) {
+    return [];
+  }
+
+  const sceneHeadingPattern = /^\s*\d+-\d+\s+(?:日|夜|晨|暮|黄昏)\s*(?:内|外|内外)\s*.+$/gm;
+  const matches = Array.from(normalizedContent.matchAll(sceneHeadingPattern));
+
+  if (matches.length === 0) {
+    return [normalizedContent];
+  }
+
+  return matches.map((match, index) => {
+    const startIndex = match.index ?? 0;
+    const endIndex =
+      index + 1 < matches.length
+        ? (matches[index + 1].index ?? normalizedContent.length)
+        : normalizedContent.length;
+    return normalizedContent.slice(startIndex, endIndex).trim();
+  });
+}
+
+function storyboardSceneBlockMatchesSelection(
+  block: string,
+  allowedSceneIds: Set<string>
+): boolean {
+  const firstLine = block.split(/\r?\n/, 1)[0]?.trim() ?? '';
+  if (!firstLine) {
+    return false;
+  }
+
+  const normalizedHeading = firstLine.toLowerCase();
+  const sceneIdMatch = firstLine.match(/^(\d+-\d+)/);
+  const normalizedSceneId = sceneIdMatch?.[1]?.toLowerCase() ?? '';
+
+  for (const allowedSceneId of allowedSceneIds) {
+    if (allowedSceneId === normalizedSceneId || normalizedHeading.includes(allowedSceneId)) {
+      return true;
+    }
+  }
+
+  return false;
 }

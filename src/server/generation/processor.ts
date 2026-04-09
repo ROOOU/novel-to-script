@@ -5,6 +5,7 @@ import { captureJobCredits, releaseJobCredits, reserveJobCredits } from '@/serve
 import { runScriptGeneration } from '@/server/script-generation/application/run-script-generation';
 import { runStoryboardGeneration } from '@/server/storyboard/application/run-storyboard-generation';
 import { getPlatformRuntime, resolvePlatformLLMConfig, type GenerationArtifact } from '@/server/shared/platform';
+import { getProjectGenerationScheduler } from './queue';
 
 export type ProjectGenerationKind = 'script-generation' | 'storyboard-generation';
 
@@ -142,6 +143,10 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
   const createdArtifacts: GenerationArtifact[] = [];
 
   try {
+    await runtime.generationJobs.update(job.id, {
+      modelName: llmResolution.config.modelName ?? null,
+      updatedByUserId: job.requestedByUserId,
+    });
     await runtime.generationJobs.markRunning(job.id, undefined, job.requestedByUserId);
 
     if (job.kind === 'script-generation') {
@@ -293,8 +298,7 @@ async function maybeRunNovelToStoryboardPipeline(
       upstreamJobId: job.id,
     },
   });
-
-  await processPersistedGenerationJob(downstreamJob.id);
+  await getProjectGenerationScheduler().schedule(downstreamJob.id);
 }
 
 async function writeDerivedArtifactRelations(

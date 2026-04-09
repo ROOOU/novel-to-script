@@ -15,6 +15,7 @@ export default async function PricingPage({
       locale={locale === 'en-US' ? 'en-US' : 'zh-CN'}
       plans={PLAN_CATALOG_ENTRIES}
       creditPacks={CREDIT_PACK_CATALOG_ENTRIES}
+      paypalClientId={process.env.PAYPAL_CLIENT_ID?.trim() || null}
       labels={dictionary.pricingPage}
     />
   );

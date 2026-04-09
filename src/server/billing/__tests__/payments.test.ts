@@ -170,6 +170,73 @@ describe('billing/payments orchestration', () => {
     });
   });
 
+  it('marks credit-pack orders as failed when paypal order creation fails', async () => {
+    runtime.paymentOrders.create.mockResolvedValue({
+      id: 'order-failed-1',
+      organizationId: 'org-1',
+      provider: 'paypal',
+      purchaseKind: 'credit-pack',
+      status: 'pending',
+      planKey: null,
+      creditPackKey: 'credits-50',
+      amountCents: 490,
+      currency: 'USD',
+      creditsGranted: 50,
+      providerOrderId: null,
+      providerSubscriptionId: null,
+      createdAt: '2026-03-24T00:00:00.000Z',
+      updatedAt: '2026-03-24T00:00:00.000Z',
+      createdByUserId: 'user-1',
+      updatedByUserId: 'user-1',
+      metadata: { locale: 'zh-CN' },
+    });
+    runtime.paymentOrders.update.mockResolvedValue({
+      id: 'order-failed-1',
+      organizationId: 'org-1',
+      provider: 'paypal',
+      purchaseKind: 'credit-pack',
+      status: 'failed',
+      planKey: null,
+      creditPackKey: 'credits-50',
+      amountCents: 490,
+      currency: 'USD',
+      creditsGranted: 50,
+      providerOrderId: null,
+      providerSubscriptionId: null,
+      createdAt: '2026-03-24T00:00:00.000Z',
+      updatedAt: '2026-03-24T00:00:00.000Z',
+      createdByUserId: 'user-1',
+      updatedByUserId: 'user-1',
+      metadata: {
+        locale: 'zh-CN',
+        payPalError: 'PAYPAL_ORDER_CREATE_FAILED',
+      },
+    });
+    mocks.createPayPalOrder.mockRejectedValueOnce(new Error('PAYPAL_ORDER_CREATE_FAILED'));
+
+    await expect(
+      createCreditPackCheckout({
+        organizationId: 'org-1',
+        userId: 'user-1',
+        email: 'creator@example.com',
+        locale: 'zh-CN',
+        origin: 'https://app.test',
+        creditPackKey: 'credits-50' as any,
+        requestedCurrency: 'USD',
+      })
+    ).rejects.toThrow('PAYPAL_ORDER_CREATE_FAILED');
+
+    expect(runtime.paymentOrders.update).toHaveBeenCalledWith(
+      'order-failed-1',
+      expect.objectContaining({
+        status: 'failed',
+        metadata: expect.objectContaining({
+          payPalError: 'PAYPAL_ORDER_CREATE_FAILED',
+        }),
+      })
+    );
+  });
+
   it('creates a paypal subscription checkout with a mapped plan id', async () => {
     runtime.paymentOrders.create.mockResolvedValue({
       id: 'sub-order-1',
@@ -304,6 +371,71 @@ describe('billing/payments orchestration', () => {
     });
   });
 
+  it('returns paid orders idempotently without re-granting credits', async () => {
+    const paidOrder = {
+      id: 'order-paid-1',
+      organizationId: 'org-1',
+      provider: 'paypal',
+      purchaseKind: 'credit-pack',
+      status: 'paid',
+      planKey: null,
+      creditPackKey: 'credits-50',
+      amountCents: 490,
+      currency: 'USD',
+      creditsGranted: 50,
+      providerOrderId: 'paypal-order-paid',
+      providerSubscriptionId: null,
+      providerCustomerId: 'payer-1',
+      createdAt: '2026-03-24T00:00:00.000Z',
+      updatedAt: '2026-03-24T01:00:00.000Z',
+      createdByUserId: 'user-1',
+      updatedByUserId: 'user-1',
+      metadata: {},
+    };
+    runtime.paymentOrders.getById.mockResolvedValue(paidOrder);
+
+    const result = await fulfillPaymentOrder('order-paid-1');
+
+    expect(result).toBe(paidOrder);
+    expect(runtime.paymentOrders.update).not.toHaveBeenCalled();
+    expect(runtime.subscriptions.upsertCurrent).not.toHaveBeenCalled();
+    expect(mocks.grantCredits).not.toHaveBeenCalled();
+  });
+
+  it('returns already-paid orders without regranting credits', async () => {
+    runtime.paymentOrders.getById.mockResolvedValue({
+      id: 'order-paid-1',
+      organizationId: 'org-1',
+      provider: 'paypal',
+      purchaseKind: 'credit-pack',
+      status: 'paid',
+      planKey: null,
+      creditPackKey: 'credits-50',
+      amountCents: 490,
+      currency: 'USD',
+      creditsGranted: 50,
+      providerOrderId: 'paypal-order-1',
+      providerSubscriptionId: null,
+      providerCustomerId: 'payer-1',
+      paidAt: '2026-03-24T01:00:00.000Z',
+      createdAt: '2026-03-24T00:00:00.000Z',
+      updatedAt: '2026-03-24T01:00:00.000Z',
+      createdByUserId: 'user-1',
+      updatedByUserId: 'user-1',
+      metadata: {},
+    });
+
+    const result = await fulfillPaymentOrder('order-paid-1');
+
+    expect(result).toMatchObject({
+      id: 'order-paid-1',
+      status: 'paid',
+    });
+    expect(runtime.paymentOrders.update).not.toHaveBeenCalled();
+    expect(runtime.subscriptions.upsertCurrent).not.toHaveBeenCalled();
+    expect(mocks.grantCredits).not.toHaveBeenCalled();
+  });
+
   it('captures paypal orders before fulfilling credit pack purchases', async () => {
     runtime.paymentOrders.getById.mockResolvedValue({
       id: 'order-2',
@@ -361,6 +493,35 @@ describe('billing/payments orchestration', () => {
       status: 'paid',
       providerCustomerId: 'payer-1',
     });
+  });
+
+  it('fails capture requests when the provider order id is missing', async () => {
+    runtime.paymentOrders.getById.mockResolvedValue({
+      id: 'order-3',
+      organizationId: 'org-1',
+      provider: 'paypal',
+      purchaseKind: 'credit-pack',
+      status: 'pending',
+      planKey: null,
+      creditPackKey: 'credits-50',
+      amountCents: 490,
+      currency: 'USD',
+      creditsGranted: 50,
+      providerOrderId: null,
+      providerSubscriptionId: null,
+      providerCustomerId: null,
+      createdAt: '2026-03-24T00:00:00.000Z',
+      updatedAt: '2026-03-24T00:00:00.000Z',
+      createdByUserId: 'user-1',
+      updatedByUserId: 'user-1',
+      metadata: {},
+    });
+
+    await expect(capturePaymentOrder('order-3')).rejects.toThrow('PAYPAL_PROVIDER_ORDER_ID_MISSING');
+
+    expect(mocks.capturePayPalOrder).not.toHaveBeenCalled();
+    expect(runtime.paymentOrders.update).not.toHaveBeenCalled();
+    expect(mocks.grantCredits).not.toHaveBeenCalled();
   });
 
 
@@ -510,6 +671,164 @@ describe('billing/payments orchestration', () => {
       expect(runtime.subscriptions.update).toHaveBeenCalledWith('sub-1', expect.objectContaining({
         status: 'canceled'
       }));
+    });
+
+    it('fulfills capture events using purchase_units custom ids and related order ids', async () => {
+      runtime.paymentOrders.getById.mockResolvedValue({
+        id: 'order-pack-2',
+        organizationId: 'org-1',
+        provider: 'paypal',
+        purchaseKind: 'credit-pack',
+        status: 'pending',
+        planKey: null,
+        creditPackKey: 'credits-50',
+        amountCents: 490,
+        currency: 'USD',
+        creditsGranted: 50,
+        providerOrderId: 'paypal-order-fallback',
+        providerSubscriptionId: null,
+        providerCustomerId: null,
+        createdAt: '2026-03-24T00:00:00.000Z',
+        updatedAt: '2026-03-24T00:00:00.000Z',
+        createdByUserId: 'user-1',
+        updatedByUserId: 'user-1',
+        metadata: {},
+      });
+      runtime.paymentOrders.update.mockResolvedValue({
+        id: 'order-pack-2',
+        organizationId: 'org-1',
+        provider: 'paypal',
+        purchaseKind: 'credit-pack',
+        status: 'paid',
+        planKey: null,
+        creditPackKey: 'credits-50',
+        amountCents: 490,
+        currency: 'USD',
+        creditsGranted: 50,
+        providerOrderId: 'paypal-order-fallback',
+        providerSubscriptionId: null,
+        providerCustomerId: null,
+        createdAt: '2026-03-24T00:00:00.000Z',
+        updatedAt: '2026-03-24T00:00:00.000Z',
+        createdByUserId: 'user-1',
+        updatedByUserId: 'user-1',
+        metadata: {},
+      });
+
+      const result = await handlePayPalWebhook({
+        event_type: 'PAYMENT.CAPTURE.COMPLETED',
+        resource: {
+          purchase_units: [
+            {
+              custom_id: 'order-pack-2',
+            },
+          ],
+          supplementary_data: {
+            related_ids: {
+              order_id: 'paypal-order-fallback',
+            },
+          },
+        },
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        action: 'capture_fulfilled',
+      });
+      expect(runtime.paymentOrders.update).toHaveBeenCalledWith(
+        'order-pack-2',
+        expect.objectContaining({
+          providerOrderId: 'paypal-order-fallback',
+          status: 'paid',
+        })
+      );
+      expect(mocks.grantCredits).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'pack_purchase',
+          paymentOrderId: 'order-pack-2',
+        })
+      );
+    });
+
+    it('throws when fulfillment webhook events are missing a payment order id', async () => {
+      await expect(
+        handlePayPalWebhook({
+          event_type: 'PAYMENT.CAPTURE.COMPLETED',
+          resource: {
+            id: 'capture-only-1',
+          },
+        })
+      ).rejects.toThrow('PAYPAL_WEBHOOK_CUSTOM_ID_MISSING');
+
+      expect(runtime.paymentOrders.getById).not.toHaveBeenCalled();
+      expect(runtime.paymentOrders.update).not.toHaveBeenCalled();
+      expect(mocks.grantCredits).not.toHaveBeenCalled();
+    });
+
+    it('cancels subscriptions for suspended webhook events and records the source event', async () => {
+      runtime.paymentOrders.getById.mockResolvedValue({
+        id: 'order-sub-3',
+        organizationId: 'org-1',
+        provider: 'paypal',
+        purchaseKind: 'subscription',
+        status: 'paid',
+        createdAt: '2026-03-24T00:00:00.000Z',
+        updatedAt: '2026-03-24T00:00:00.000Z',
+        createdByUserId: 'user-1',
+        updatedByUserId: 'user-1',
+        metadata: {},
+      });
+      runtime.subscriptions.getCurrentByOrganizationId.mockResolvedValue({
+        id: 'sub-3',
+        organizationId: 'org-1',
+      });
+      runtime.paymentOrders.update.mockResolvedValue({
+        id: 'order-sub-3',
+      });
+
+      const result = await handlePayPalWebhook({
+        event_type: 'BILLING.SUBSCRIPTION.SUSPENDED',
+        resource: {
+          custom_id: 'order-sub-3',
+        },
+      });
+
+      expect(result).toEqual({
+        ok: true,
+        action: 'subscription_cancelled',
+      });
+      expect(runtime.subscriptions.update).toHaveBeenCalledWith(
+        'sub-3',
+        expect.objectContaining({
+          status: 'canceled',
+        })
+      );
+      expect(runtime.paymentOrders.update).toHaveBeenCalledWith(
+        'order-sub-3',
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            webhookEventType: 'BILLING.SUBSCRIPTION.SUSPENDED',
+          }),
+        })
+      );
+    });
+
+    it('ignores unsupported webhook event types without touching payment state', async () => {
+      const result = await handlePayPalWebhook({
+        event_type: 'PAYMENT.CAPTURE.DENIED',
+        resource: {
+          id: 'capture-denied-1',
+        },
+      });
+
+      expect(result).toEqual({
+        ok: true,
+        action: 'ignored',
+      });
+      expect(runtime.paymentOrders.getById).not.toHaveBeenCalled();
+      expect(runtime.paymentOrders.update).not.toHaveBeenCalled();
+      expect(runtime.subscriptions.update).not.toHaveBeenCalled();
+      expect(mocks.grantCredits).not.toHaveBeenCalled();
     });
   });
 });

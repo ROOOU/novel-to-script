@@ -43,7 +43,7 @@ export function AppShellHeader({
   const userInitials = getInitials(userDisplayName);
 
   useEffect(() => {
-    if (!signedIn) {
+    if (!signedIn || initialCredits != null) {
       return;
     }
 
@@ -53,7 +53,7 @@ export function AppShellHeader({
       if (!active) {
         return;
       }
-      setIsLoadingSummary(initialCredits == null);
+      setIsLoadingSummary(true);
     });
 
     void fetch('/api/billing/summary', { signal: controller.signal })

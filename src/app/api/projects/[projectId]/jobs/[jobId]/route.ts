@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireViewerResponse } from '@/server/auth/http';
+import { viewerOwnsProject } from '@/server/auth/viewer-access';
 import { cancelProjectGenerationJob, retryProjectGenerationJob } from '@/server/projects/job-actions';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
@@ -25,7 +26,7 @@ export async function POST(
   const { projectId, jobId } = await params;
   const runtime = getPlatformRuntime();
   const project = await runtime.projects.getById(projectId);
-  if (!project || project.organizationId !== viewer.organization.id) {
+  if (!project || !viewerOwnsProject(viewer, project)) {
     return NextResponse.json(
       {
         ok: false,

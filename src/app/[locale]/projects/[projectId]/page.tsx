@@ -2,6 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { ProjectWorkspaceClient } from '@/features/saas/ProjectWorkspaceClient';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { getCurrentViewer } from '@/server/auth/service';
+import { viewerOwnsProject } from '@/server/auth/viewer-access';
 import { getProjectBundle } from '@/server/projects/service';
 
 export default async function ProjectDetailPage({
@@ -20,7 +21,7 @@ export default async function ProjectDetailPage({
     getProjectBundle(projectId),
   ]);
 
-  if (!bundle || bundle.project.organizationId !== viewer.organization.id) {
+  if (!bundle || !viewerOwnsProject(viewer, bundle.project)) {
     notFound();
   }
 

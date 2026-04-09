@@ -3,6 +3,7 @@ import { BillingClient } from '@/features/saas/BillingClient';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { getCurrentViewer } from '@/server/auth/service';
 import { getBillingSummary } from '@/server/billing/payments';
+import { getBillingUsageSummary } from '@/server/billing/usage';
 
 export default async function BillingPage({
   params,
@@ -17,9 +18,10 @@ export default async function BillingPage({
     redirect(`/${locale}/login`);
   }
 
-  const [dictionary, summary] = await Promise.all([
+  const [dictionary, summary, usage] = await Promise.all([
     getDictionary(locale),
     getBillingSummary(viewer.organization.id),
+    getBillingUsageSummary(viewer.organization.id),
   ]);
 
   return (
@@ -29,6 +31,7 @@ export default async function BillingPage({
       creditAccount={summary.creditAccount}
       paymentOrders={summary.paymentOrders}
       ledgerEntries={summary.ledgerEntries}
+      usage={usage}
       initialCheckout={{
         status:
           readSearchParam(resolvedSearchParams.checkout) === 'success'

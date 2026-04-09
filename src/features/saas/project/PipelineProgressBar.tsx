@@ -1,6 +1,11 @@
 'use client';
 
 import type { GenerationJob } from '@/server/shared/platform/domain';
+import type { SupportedLocale } from '@/server/shared/platform/domain';
+import {
+  formatCounterLabel,
+  formatJobStatus,
+} from '@/features/saas/project/presentation';
 
 export type PipelineStageStatus =
   | 'pending'
@@ -21,6 +26,7 @@ export interface PipelineStageItem {
 }
 
 interface PipelineProgressBarProps {
+  locale: SupportedLocale;
   title: string;
   subtitle?: string;
   stages: PipelineStageItem[];
@@ -31,6 +37,7 @@ interface PipelineProgressBarProps {
 const DEFAULT_EMPTY_LABEL = 'Pipeline summary pending.';
 
 export function PipelineProgressBar({
+  locale,
   title,
   subtitle,
   stages,
@@ -51,9 +58,21 @@ export function PipelineProgressBar({
         </div>
         <div className="pipeline-progress-stats">
           <span className="chip">{`${completedCount}/${stages.length}`}</span>
-          {runningCount > 0 ? <span className="status-pill status-pill-running">{runningCount} running</span> : null}
-          {failedCount > 0 ? <span className="status-pill status-pill-danger">{failedCount} failed</span> : null}
-          {totalJobs > 0 ? <span className="chip">{`${totalJobs} jobs`}</span> : null}
+          {runningCount > 0 ? (
+            <span className="status-pill status-pill-running">
+              {formatCounterLabel(locale, runningCount, 'running stage', 'running stages', '进行中阶段')}
+            </span>
+          ) : null}
+          {failedCount > 0 ? (
+            <span className="status-pill status-pill-danger">
+              {formatCounterLabel(locale, failedCount, 'failed stage', 'failed stages', '失败阶段')}
+            </span>
+          ) : null}
+          {totalJobs > 0 ? (
+            <span className="chip">
+              {formatCounterLabel(locale, totalJobs, 'job', 'jobs', '任务')}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -74,7 +93,9 @@ export function PipelineProgressBar({
                 <div className="stack-gap-sm">
                   <div className="pipeline-stage-headline">
                     <strong>{stage.title}</strong>
-                    <span className={`status-pill status-pill-${tone}`}>{stage.status}</span>
+                    <span className={`status-pill status-pill-${tone}`}>
+                      {formatJobStatus(locale, stage.status)}
+                    </span>
                   </div>
                   <p className="pipeline-stage-summary">
                     {stage.summary?.trim() || emptyLabel || DEFAULT_EMPTY_LABEL}
@@ -82,8 +103,12 @@ export function PipelineProgressBar({
                   {stage.detail ? <p className="pipeline-stage-detail">{stage.detail}</p> : null}
                 </div>
                 <div className="pipeline-stage-meta">
-                  {stage.jobId ? <span>Job {shortenId(stage.jobId)}</span> : null}
-                  {stage.artifactId ? <span>Artifact {shortenId(stage.artifactId)}</span> : null}
+                  {stage.jobId ? (
+                    <span>{locale === 'en-US' ? 'Job' : '任务'} {shortenId(stage.jobId)}</span>
+                  ) : null}
+                  {stage.artifactId ? (
+                    <span>{locale === 'en-US' ? 'Artifact' : '产物'} {shortenId(stage.artifactId)}</span>
+                  ) : null}
                 </div>
               </article>
             );

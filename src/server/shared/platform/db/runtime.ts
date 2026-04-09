@@ -132,23 +132,42 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
 }
 
 function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRepository {
+  const userSelection = {
+    id: usersTable.id,
+    email: usersTable.email,
+    displayName: usersTable.displayName,
+    passwordHash: usersTable.passwordHash,
+    avatarUrl: usersTable.avatarUrl,
+    preferredLocale: usersTable.preferredLocale,
+    defaultOrganizationId: usersTable.defaultOrganizationId,
+    status: usersTable.status,
+    lastLoginAt: usersTable.lastLoginAt,
+    createdAt: usersTable.createdAt,
+    createdByUserId: usersTable.createdByUserId,
+    updatedAt: usersTable.updatedAt,
+    updatedByUserId: usersTable.updatedByUserId,
+  };
+
   return {
     async getById(id: string) {
-      return selectOne<User>(db.select({ data: usersTable.data }).from(usersTable).where(eq(usersTable.id, id)));
+      const rows = await db.select(userSelection).from(usersTable).where(eq(usersTable.id, id)).limit(1);
+      return rows[0] ? mapUserRow(rows[0]) : null;
     },
     async getByEmail(email) {
-      return selectOne<User>(
-        db.select({ data: usersTable.data }).from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase()))
-      );
+      const rows = await db
+        .select(userSelection)
+        .from(usersTable)
+        .where(eq(usersTable.email, email.trim().toLowerCase()))
+        .limit(1);
+      return rows[0] ? mapUserRow(rows[0]) : null;
     },
     async listByIds(ids) {
       if (ids.length === 0) {
         return [];
       }
 
-      return selectMany<User>(
-        db.select({ data: usersTable.data }).from(usersTable).where(inArray(usersTable.id, ids))
-      );
+      const rows = await db.select(userSelection).from(usersTable).where(inArray(usersTable.id, ids));
+      return rows.map(mapUserRow);
     },
     async create(input) {
       const now = getNowTimestamp();
@@ -167,7 +186,7 @@ function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRep
         createdByUserId: input.createdByUserId ?? null,
         updatedByUserId: input.createdByUserId ?? null,
       };
-      await db.insert(usersTable).values(buildUserRow(entity));
+      await withOptionalUsersDataColumn((includeData) => db.insert(usersTable).values(buildUserRow(entity, includeData)));
       return entity;
     },
     async update(id, input) {
@@ -179,7 +198,9 @@ function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRep
       const entity = applyPatch(current, input);
       entity.updatedAt = getNowTimestamp();
       entity.updatedByUserId = input.updatedByUserId ?? current.updatedByUserId ?? null;
-      await db.update(usersTable).set(buildUserRow(entity)).where(eq(usersTable.id, id));
+      await withOptionalUsersDataColumn((includeData) =>
+        db.update(usersTable).set(buildUserRow(entity, includeData)).where(eq(usersTable.id, id))
+      );
       return entity;
     },
   };
@@ -1095,8 +1116,8 @@ function normalizeRedeemCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
-function buildUserRow(entity: User): any {
-  return {
+function buildUserRow(entity: User, includeData = true): any {
+  const row: Record<string, unknown> = {
     ...entity,
     passwordHash: entity.passwordHash ?? null,
     avatarUrl: entity.avatarUrl ?? null,
@@ -1105,8 +1126,64 @@ function buildUserRow(entity: User): any {
     lastLoginAt: entity.lastLoginAt ?? null,
     createdByUserId: entity.createdByUserId ?? null,
     updatedByUserId: entity.updatedByUserId ?? null,
-    data: entity,
   };
+
+  if (includeData) {
+    row.data = entity;
+  }
+
+  return row;
+}
+
+function mapUserRow(row: {
+  id: string;
+  email: string;
+  displayName: string;
+  passwordHash: string | null;
+  avatarUrl: string | null;
+  preferredLocale: string | null;
+  defaultOrganizationId: string | null;
+  status: string;
+  lastLoginAt: string | null;
+  createdAt: string;
+  createdByUserId: string | null;
+  updatedAt: string;
+  updatedByUserId: string | null;
+}): User {
+  const preferredLocale = row.preferredLocale === 'en-US' || row.preferredLocale === 'zh-CN' ? row.preferredLocale : 'zh-CN';
+
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName,
+    passwordHash: row.passwordHash ?? null,
+    avatarUrl: row.avatarUrl ?? null,
+    preferredLocale,
+    defaultOrganizationId: row.defaultOrganizationId ?? null,
+    status: row.status as User['status'],
+    lastLoginAt: row.lastLoginAt ?? null,
+    createdAt: row.createdAt,
+    createdByUserId: row.createdByUserId ?? null,
+    updatedAt: row.updatedAt,
+    updatedByUserId: row.updatedByUserId ?? null,
+  };
+}
+
+async function withOptionalUsersDataColumn<T>(operation: (includeData: boolean) => Promise<T>): Promise<T> {
+  try {
+    return await operation(true);
+  } catch (error) {
+    if (!isMissingUsersDataColumnError(error)) {
+      throw error;
+    }
+    return operation(false);
+  }
+}
+
+function isMissingUsersDataColumnError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const lower = message.toLowerCase();
+  return lower.includes('column') && lower.includes('data') && lower.includes('users') && lower.includes('exist');
 }
 
 function buildOrganizationRow(entity: Organization): any {

@@ -1,5 +1,5 @@
 import type { LLMConfig } from '@/lib/llm';
-import { normalizeOpenAIBaseUrl } from '@/lib/llm-config';
+import { normalizeLLMBaseUrl, parseLLMFallbackConfigsFromEnv } from '@/lib/llm-config';
 import { type PlatformRequestContext } from './context';
 
 export interface ResolvedPlatformLLMConfig {
@@ -15,38 +15,39 @@ export interface ResolvePlatformLLMConfigOptions {
 }
 
 const MISSING_LLM_CONFIG_ERROR =
-  '服务端未配置 LLM API Key，请在后端环境变量中设置 OPENAI_API_KEY 或 API_KEY。';
+  '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。';
 
 export function resolvePlatformLLMConfig(
   context: PlatformRequestContext,
   options: ResolvePlatformLLMConfigOptions = {}
 ): ResolvedPlatformLLMConfig {
   const workspaceApiKey = options.workspaceApiKey?.trim();
-  const environmentApiKey = process.env.OPENAI_API_KEY?.trim() || process.env.API_KEY?.trim() || '';
+  const environmentApiKey = process.env.LLM_API_KEY?.trim() || '';
+  const fallbackConfigs = parseLLMFallbackConfigsFromEnv();
 
   if (workspaceApiKey) {
     return {
       config: {
         apiKey: workspaceApiKey,
-        baseUrl: normalizeOpenAIBaseUrl(
-          options.workspaceBaseUrl?.trim() || process.env.OPENAI_BASE_URL || process.env.API_BASE_URL
-        ),
+        baseUrl: normalizeLLMBaseUrl(options.workspaceBaseUrl?.trim() || process.env.LLM_BASE_URL),
         modelName: options.workspaceModelName?.trim() || getPlanDefaultModel(context),
+        fallbacks: fallbackConfigs,
       },
       error: null,
       source: 'workspace',
     };
   }
 
-  if (environmentApiKey) {
+  if (environmentApiKey || fallbackConfigs.length > 0) {
     return {
       config: {
         apiKey: environmentApiKey,
-        baseUrl: normalizeOpenAIBaseUrl(process.env.OPENAI_BASE_URL || process.env.API_BASE_URL),
-        modelName: process.env.MODEL_NAME || getPlanDefaultModel(context),
+        baseUrl: normalizeLLMBaseUrl(process.env.LLM_BASE_URL),
+        modelName: process.env.LLM_MODEL_NAME || getPlanDefaultModel(context),
+        fallbacks: fallbackConfigs,
       },
       error: null,
-      source: 'environment',
+      source: environmentApiKey ? 'environment' : 'plan-default',
     };
   }
 
@@ -61,9 +62,9 @@ function getPlanDefaultModel(context: PlatformRequestContext): string {
   switch (context.plan) {
     case 'creator':
     case 'pro':
-      return 'gpt-4o';
+      return 'gemini-2.5-flash';
     case 'free':
     default:
-      return 'gpt-4o';
+      return 'gemini-2.5-flash';
   }
 }

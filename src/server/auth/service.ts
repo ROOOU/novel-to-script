@@ -1,4 +1,5 @@
 import { compare, hash } from 'bcryptjs';
+import { cache } from 'react';
 import { slugify } from '@/lib/slug';
 import { getInitialBillingPreferences, getPlanCatalogEntry } from '@/server/billing/catalog';
 import { getPlatformRuntime } from '@/server/shared/platform';
@@ -9,6 +10,12 @@ import { getCurrentSession } from './session';
 export interface AuthenticateInput {
   email: string;
   password: string;
+  displayName?: string;
+  locale: SupportedLocale;
+}
+
+export interface AuthenticateTrustedInput {
+  email: string;
   displayName?: string;
   locale: SupportedLocale;
 }
@@ -137,7 +144,125 @@ export async function authenticateUser(input: AuthenticateInput): Promise<AppSes
   };
 }
 
-export async function getCurrentViewer() {
+export async function authenticateTrustedUser(input: AuthenticateTrustedInput): Promise<AppSession> {
+  const runtime = getPlatformRuntime();
+  const normalizedEmail = input.email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    throw new Error('Missing email');
+  }
+
+  const existingUser = await runtime.users.getByEmail(normalizedEmail);
+  if (existingUser) {
+    const organizations = await runtime.organizations.listByOwnerUserId(existingUser.id);
+    const organization = organizations[0];
+    if (!organization) {
+      throw new Error('MISSING_ORGANIZATION');
+    }
+    const workspaces = await runtime.workspaces.listByOrganizationId(organization.id);
+    const workspace = workspaces[0];
+    if (!workspace) {
+      throw new Error('MISSING_WORKSPACE');
+    }
+
+    await runtime.users.update(existingUser.id, {
+      displayName: input.displayName?.trim() || existingUser.displayName,
+      lastLoginAt: new Date().toISOString(),
+      preferredLocale: input.locale,
+      updatedByUserId: existingUser.id,
+    });
+
+    return {
+      userId: existingUser.id,
+      email: existingUser.email,
+      displayName: input.displayName?.trim() || existingUser.displayName,
+      organizationId: organization.id,
+      workspaceId: workspace.id,
+      locale: input.locale,
+      issuedAt: new Date().toISOString(),
+    };
+  }
+
+  const displayName = input.displayName?.trim() || normalizedEmail.split('@')[0] || 'Creator';
+  const billingPreferences = getInitialBillingPreferences(input.locale);
+
+  const user = await runtime.users.create({
+    email: normalizedEmail,
+    displayName,
+    passwordHash: null,
+    preferredLocale: input.locale,
+    status: 'active',
+  });
+
+  const organization = await runtime.organizations.create({
+    slug: await uniqueSlug('org', displayName),
+    name: `${displayName}'s Studio`,
+    ownerUserId: user.id,
+    billingLocale: billingPreferences.locale,
+    billingCurrency: billingPreferences.currency,
+    pricingRegion: billingPreferences.pricingRegion,
+    createdByUserId: user.id,
+  });
+
+  const workspace = await runtime.workspaces.create({
+    organizationId: organization.id,
+    slug: 'main',
+    name: input.locale === 'en-US' ? 'Main Project Space' : '默认项目空间',
+    defaultLocale: input.locale,
+    createdByUserId: user.id,
+  });
+
+  await runtime.users.update(user.id, {
+    defaultOrganizationId: organization.id,
+    lastLoginAt: new Date().toISOString(),
+    updatedByUserId: user.id,
+  });
+
+  const freePlan = getPlanCatalogEntry('free');
+  await runtime.subscriptions.create({
+    organizationId: organization.id,
+    provider: 'internal',
+    planKey: freePlan.key,
+    status: 'active',
+    billingInterval: freePlan.billingInterval,
+    entitlements: freePlan.entitlements,
+    priceCents: freePlan.prices.USD.amountCents,
+    currency: 'USD',
+    currentPeriodStart: new Date().toISOString(),
+    currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    createdByUserId: user.id,
+  });
+
+  const creditAccount = await runtime.creditAccounts.create({
+    organizationId: organization.id,
+    availableCredits: freePlan.monthlyCredits,
+    reservedCredits: 0,
+    grantedCreditsTotal: freePlan.monthlyCredits,
+    consumedCreditsTotal: 0,
+    createdByUserId: user.id,
+  });
+
+  await runtime.creditLedger.append({
+    organizationId: organization.id,
+    creditAccountId: creditAccount.id,
+    kind: 'subscription_grant',
+    deltaCredits: freePlan.monthlyCredits,
+    balanceAfter: freePlan.monthlyCredits,
+    note: 'Initial free credits',
+    createdByUserId: user.id,
+  });
+
+  return {
+    userId: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    organizationId: organization.id,
+    workspaceId: workspace.id,
+    locale: input.locale,
+    issuedAt: new Date().toISOString(),
+  };
+}
+
+export const getCurrentViewer = cache(async function getCurrentViewer() {
   const session = await getCurrentSession();
   if (!session) {
     return null;
@@ -164,7 +289,7 @@ export async function getCurrentViewer() {
     subscription,
     creditAccount,
   };
-}
+});
 
 async function uniqueSlug(prefix: string, base: string): Promise<string> {
   const runtime = getPlatformRuntime();

@@ -39,8 +39,102 @@ describe('project job action route', () => {
         getById: vi.fn().mockResolvedValue({
           id: 'proj_1',
           organizationId: 'org_1',
+          workspaceId: 'ws_1',
         }),
       },
+    });
+  });
+
+  it('rejects invalid payloads with 400 before invoking job actions', async () => {
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs/job_1', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'pause' }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1', jobId: 'job_1' }) }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: expect.any(String),
+    });
+    expect(mocks.retryProjectGenerationJob).not.toHaveBeenCalled();
+    expect(mocks.cancelProjectGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the project is not found', async () => {
+    const runtime = mocks.getPlatformRuntime();
+    runtime.projects.getById.mockResolvedValueOnce(null);
+
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs/job_1', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'retry' }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1', jobId: 'job_1' }) }
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'PROJECT_NOT_FOUND',
+    });
+    expect(mocks.retryProjectGenerationJob).not.toHaveBeenCalled();
+    expect(mocks.cancelProjectGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the retry target job is missing', async () => {
+    mocks.retryProjectGenerationJob.mockRejectedValueOnce(new Error('PROJECT_JOB_NOT_FOUND'));
+
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs/job_1', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'retry' }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1', jobId: 'job_1' }) }
+    );
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'PROJECT_JOB_NOT_FOUND',
+    });
+  });
+
+  it('returns 409 when retrying a non-retryable job', async () => {
+    mocks.retryProjectGenerationJob.mockRejectedValueOnce(new Error('JOB_RETRY_NOT_ALLOWED'));
+
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs/job_1', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'retry' }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1', jobId: 'job_1' }) }
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'JOB_RETRY_NOT_ALLOWED',
+    });
+  });
+
+  it('returns 409 when cancelling a non-cancelable job', async () => {
+    mocks.cancelProjectGenerationJob.mockRejectedValueOnce(new Error('JOB_CANCEL_NOT_ALLOWED'));
+
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs/job_1', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'cancel' }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1', jobId: 'job_1' }) }
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      ok: false,
+      error: 'JOB_CANCEL_NOT_ALLOWED',
     });
   });
 
@@ -106,4 +200,5 @@ describe('project job action route', () => {
       })
     );
   });
+
 });

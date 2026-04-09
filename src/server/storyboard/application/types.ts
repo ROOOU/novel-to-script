@@ -4,6 +4,7 @@ import type {
   StoryboardGenerationEvent,
 } from '@/features/storyboard/contracts';
 import type { PlatformRequestContext, PlatformUsageEvent, UsageMeter } from '@/server/shared/platform';
+import type { StoryboardMetadata } from '@/server/shared/platform';
 import type { SSESender } from '@/server/shared/sse';
 
 export interface StoryboardGenerationExecutionOptions {
@@ -28,7 +29,7 @@ export interface StoryboardGenerationArtifactRecord {
   title: string;
   format: 'text/plain';
   content: string;
-  metadata?: Record<string, unknown>;
+  metadata?: StoryboardMetadata;
 }
 
 export function buildStoryboardUsageEvent(

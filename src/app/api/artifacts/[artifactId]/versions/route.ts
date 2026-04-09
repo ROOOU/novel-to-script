@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireViewerResponse } from '@/server/auth/http';
+import { viewerOwnsArtifact } from '@/server/auth/viewer-access';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 const createVersionSchema = z.object({
@@ -20,7 +21,7 @@ export async function POST(
   const { artifactId } = await params;
   const runtime = getPlatformRuntime();
   const artifact = await runtime.generationArtifacts.getById(artifactId);
-  if (!artifact || artifact.organizationId !== viewer.organization.id) {
+  if (!artifact || !viewerOwnsArtifact(viewer, artifact)) {
     return NextResponse.json(
       {
         ok: false,
@@ -30,7 +31,23 @@ export async function POST(
     );
   }
 
-  const body = createVersionSchema.parse(await request.json());
+  let body: z.infer<typeof createVersionSchema>;
+  try {
+    body = createVersionSchema.parse(await request.json());
+  } catch (error) {
+    const message =
+      error instanceof z.ZodError
+        ? error.issues[0]?.message ?? 'INVALID_VERSION_PAYLOAD'
+        : 'INVALID_VERSION_PAYLOAD';
+    return NextResponse.json(
+      {
+        ok: false,
+        error: message,
+      },
+      { status: 400 }
+    );
+  }
+
   const version = await runtime.generationArtifacts.create({
     organizationId: artifact.organizationId,
     workspaceId: artifact.workspaceId,

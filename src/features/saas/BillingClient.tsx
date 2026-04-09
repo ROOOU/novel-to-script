@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   CreditAccount,
   CreditLedgerEntry,
+  GenerationJobKind,
   PaymentOrder,
   Subscription,
   SupportedLocale,
 } from '@/server/shared/platform/domain';
+import type { BillingUsageSummary } from '@/server/billing/usage';
 
 interface BillingClientProps {
   locale: SupportedLocale;
@@ -15,6 +17,7 @@ interface BillingClientProps {
   creditAccount: CreditAccount | null;
   paymentOrders: PaymentOrder[];
   ledgerEntries: CreditLedgerEntry[];
+  usage: BillingUsageSummary;
   initialCheckout?: {
     status?: 'success' | 'cancelled' | null;
     paymentOrderId?: string | null;
@@ -26,7 +29,27 @@ interface BillingClientProps {
     subtitle: string;
     currentPlan: string;
     creditsBalance: string;
+    reservedCredits: string;
+    grantedTotal: string;
+    consumedTotal: string;
     orders: string;
+    noOrders: string;
+    creditActivity: string;
+    noCreditActivity: string;
+    usageTitle: string;
+    usageSubtitle: string;
+    usageThisMonth: string;
+    usageByProject: string;
+    usageByTaskType: string;
+    usageEmpty: string;
+    usageShare: string;
+    usageCreditsUnit: string;
+    usageJobs: string;
+    unknownProject: string;
+    taskTypeScriptGeneration: string;
+    taskTypeStoryboardGeneration: string;
+    taskTypeExportGeneration: string;
+    taskTypeAnalysisGeneration: string;
     openPortal: string;
     manualMessage: string;
   };
@@ -38,6 +61,7 @@ export function BillingClient({
   creditAccount: initialCreditAccount,
   paymentOrders: initialPaymentOrders,
   ledgerEntries: initialLedgerEntries,
+  usage: initialUsage,
   initialCheckout,
   labels,
 }: BillingClientProps) {
@@ -45,6 +69,7 @@ export function BillingClient({
   const [creditAccount, setCreditAccount] = useState(initialCreditAccount);
   const [paymentOrders, setPaymentOrders] = useState(initialPaymentOrders);
   const [ledgerEntries, setLedgerEntries] = useState(initialLedgerEntries);
+  const [usage, setUsage] = useState(initialUsage);
   const [checkoutNotice, setCheckoutNotice] = useState<{
     tone: 'success' | 'running' | 'danger' | 'muted';
     message: string;
@@ -76,7 +101,10 @@ export function BillingClient({
   }, [initialCheckout]);
 
   async function reconcileCheckout() {
-    if (initialCheckout?.purchaseKind === 'credit-pack') {
+    if (
+      initialCheckout?.purchaseKind === 'credit-pack' &&
+      (initialCheckout.paymentOrderId || initialCheckout.providerOrderId)
+    ) {
       setCheckoutNotice({
         tone: 'running',
         message:
@@ -126,6 +154,15 @@ export function BillingClient({
     setCreditAccount(summaryPayload.creditAccount ?? null);
     setPaymentOrders(summaryPayload.paymentOrders ?? []);
     setLedgerEntries(summaryPayload.ledgerEntries ?? []);
+
+    const usageResponse = await fetch('/api/billing/usage');
+    if (usageResponse.ok) {
+      const usagePayload = await usageResponse.json();
+      if (usagePayload?.ok && usagePayload.usage) {
+        setUsage(usagePayload.usage);
+      }
+    }
+
     setCheckoutNotice({
       tone: 'success',
       message:
@@ -142,10 +179,21 @@ export function BillingClient({
 
   return (
     <div className="workspace-shell stack-gap-lg">
-      <section className="workspace-hero">
-        <div>
+      <section className="workspace-hero billing-hero">
+        <div className="projects-hero-copy">
+          <span className="eyebrow">{locale === 'en-US' ? 'Billing' : '账单'}</span>
           <h1>{labels.title}</h1>
           <p>{labels.subtitle}</p>
+        </div>
+        <div className="projects-hero-aside">
+          <div className="metric-card metric-card-matcha">
+            <span>{locale === 'en-US' ? 'Available' : '可用积分'}</span>
+            <strong>{creditAccount?.availableCredits ?? 0}</strong>
+          </div>
+          <div className="metric-card metric-card-blueberry">
+            <span>PayPal</span>
+            <strong>{subscription?.planKey ?? 'free'}</strong>
+          </div>
         </div>
       </section>
 
@@ -169,15 +217,15 @@ export function BillingClient({
           </div>
           <div className="timeline-meta-grid timeline-meta-grid-secondary">
             <div className="timeline-meta-card">
-              <span>{locale === 'en-US' ? 'Reserved credits' : '预留积分'}</span>
+              <span>{labels.reservedCredits}</span>
               <strong>{creditAccount?.reservedCredits ?? 0}</strong>
             </div>
             <div className="timeline-meta-card">
-              <span>{locale === 'en-US' ? 'Granted total' : '累计发放'}</span>
+              <span>{labels.grantedTotal}</span>
               <strong>{creditAccount?.grantedCreditsTotal ?? 0}</strong>
             </div>
             <div className="timeline-meta-card">
-              <span>{locale === 'en-US' ? 'Consumed total' : '累计消耗'}</span>
+              <span>{labels.consumedTotal}</span>
               <strong>{creditAccount?.consumedCreditsTotal ?? 0}</strong>
             </div>
           </div>
@@ -185,6 +233,77 @@ export function BillingClient({
             <p className="helper-text">{`${labels.openPortal}: ${subscription?.provider ?? 'paypal'}`}</p>
             <p className="helper-text">{labels.manualMessage}</p>
           </div>
+        </article>
+
+        <article className="card stack-gap billing-usage-card">
+          <div className="list-row">
+            <div className="stack-gap-sm">
+              <h2>{labels.usageTitle}</h2>
+              <p className="helper-text">{labels.usageSubtitle}</p>
+            </div>
+            <div className="list-row-meta">
+              <span>{labels.usageThisMonth}</span>
+              <strong>{formatUsageCredits(locale, usage.totalCreditsConsumed, labels.usageCreditsUnit)}</strong>
+            </div>
+          </div>
+
+          {usage.totalCreditsConsumed === 0 ? (
+            <p className="helper-text">{labels.usageEmpty}</p>
+          ) : (
+            <div className="billing-usage-layout">
+              <section className="billing-usage-section">
+                <h3>{labels.usageByProject}</h3>
+                <div className="billing-usage-list">
+                  {usage.byProject.map((entry) => (
+                    <div key={entry.projectId} className="billing-usage-item">
+                      <div className="billing-usage-item-head">
+                        <strong>{entry.projectName || labels.unknownProject}</strong>
+                        <span>{formatUsageCredits(locale, entry.creditsConsumed, labels.usageCreditsUnit)}</span>
+                      </div>
+                      <div className="billing-usage-bar">
+                        <div
+                          className="billing-usage-bar-fill"
+                          style={{
+                            width: `${Math.max(entry.share * 100, entry.share > 0 ? 6 : 0)}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="billing-usage-item-meta">
+                        <span>{formatUsageJobs(locale, entry.jobCount, labels.usageJobs)}</span>
+                        <span>{formatUsageShare(locale, entry.share, labels.usageShare)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="billing-usage-section">
+                <h3>{labels.usageByTaskType}</h3>
+                <div className="billing-usage-list">
+                  {usage.byTaskType.map((entry) => (
+                    <div key={entry.jobKind} className="billing-usage-item">
+                      <div className="billing-usage-item-head">
+                        <strong>{resolveTaskTypeLabel(entry.jobKind, labels)}</strong>
+                        <span>{formatUsageCredits(locale, entry.creditsConsumed, labels.usageCreditsUnit)}</span>
+                      </div>
+                      <div className="billing-usage-bar">
+                        <div
+                          className="billing-usage-bar-fill"
+                          style={{
+                            width: `${Math.max(entry.share * 100, entry.share > 0 ? 6 : 0)}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="billing-usage-item-meta">
+                        <span>{formatUsageJobs(locale, entry.jobCount, labels.usageJobs)}</span>
+                        <span>{formatUsageShare(locale, entry.share, labels.usageShare)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          )}
         </article>
 
         <article className="card stack-gap">
@@ -208,14 +327,12 @@ export function BillingClient({
                 </div>
               </div>
             ))}
-            {paymentOrders.length === 0 ? (
-              <p className="helper-text">{locale === 'en-US' ? 'No orders yet.' : '还没有支付订单。'}</p>
-            ) : null}
+            {paymentOrders.length === 0 ? <p className="helper-text">{labels.noOrders}</p> : null}
           </div>
         </article>
 
         <article className="card stack-gap">
-          <h2>{locale === 'en-US' ? 'Credit activity' : '积分流水'}</h2>
+          <h2>{labels.creditActivity}</h2>
           <div className="stack-gap">
             {ledgerEntries.slice(0, 6).map((entry) => (
               <div key={entry.id} className="list-row">
@@ -229,9 +346,7 @@ export function BillingClient({
                 </div>
               </div>
             ))}
-            {ledgerEntries.length === 0 ? (
-              <p className="helper-text">{locale === 'en-US' ? 'No credit activity yet.' : '还没有积分流水。'}</p>
-            ) : null}
+            {ledgerEntries.length === 0 ? <p className="helper-text">{labels.noCreditActivity}</p> : null}
           </div>
         </article>
       </section>
@@ -245,4 +360,40 @@ function clearCheckoutQuery() {
   }
 
   window.history.replaceState({}, '', window.location.pathname);
+}
+
+function formatUsageCredits(locale: SupportedLocale, value: number, unit: string) {
+  const formatted = new Intl.NumberFormat(locale).format(value);
+  return `${formatted} ${unit}`;
+}
+
+function formatUsageJobs(locale: SupportedLocale, value: number, label: string) {
+  const formatted = new Intl.NumberFormat(locale).format(value);
+  return `${label}: ${formatted}`;
+}
+
+function formatUsageShare(locale: SupportedLocale, share: number, label: string) {
+  const percentage = new Intl.NumberFormat(locale, {
+    style: 'percent',
+    maximumFractionDigits: 0,
+  }).format(share);
+  return `${label}: ${percentage}`;
+}
+
+function resolveTaskTypeLabel(
+  jobKind: GenerationJobKind,
+  labels: BillingClientProps['labels']
+) {
+  switch (jobKind) {
+    case 'script-generation':
+      return labels.taskTypeScriptGeneration;
+    case 'storyboard-generation':
+      return labels.taskTypeStoryboardGeneration;
+    case 'export-generation':
+      return labels.taskTypeExportGeneration;
+    case 'analysis-generation':
+      return labels.taskTypeAnalysisGeneration;
+    default:
+      return jobKind;
+  }
 }

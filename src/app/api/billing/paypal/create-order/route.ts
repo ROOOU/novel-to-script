@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { CreditPackKey } from '@/server/billing/catalog';
 import { createCreditPackCheckout } from '@/server/billing/payments';
 import { requireViewerResponse } from '@/server/auth/http';
+import { getPayPalRouteErrorStatus, logPayPalRouteError } from '@/app/api/billing/paypal/error-response';
 
 const createOrderSchema = z.object({
   creditPackKey: z.string().min(1),
@@ -38,14 +39,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       checkout,
+      paymentOrderId: checkout.order.id,
+      providerOrderId: checkout.providerOrderId,
     });
   } catch (error) {
+    logPayPalRouteError('create-order', error);
     return NextResponse.json(
       {
         ok: false,
         error: error instanceof Error ? error.message : 'PAYPAL_CREATE_ORDER_FAILED',
       },
-      { status: 400 }
+      { status: getPayPalRouteErrorStatus(error) }
     );
   }
 }
