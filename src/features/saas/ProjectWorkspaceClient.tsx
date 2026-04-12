@@ -15,6 +15,7 @@ import { ProjectArtifactStudioPanel } from '@/features/saas/project/ProjectArtif
 import { ProjectExportPanel } from '@/features/saas/project/ProjectExportPanel';
 import { SourceEditorPanel } from '@/features/saas/project/SourceEditorPanel';
 import { StoryboardPanel } from '@/features/saas/project/StoryboardPanel';
+import { ProjectWorkspaceProvider, useProjectWorkspace } from '@/features/saas/project/ProjectWorkspaceContext';
 
 type WorkspaceTab = 'source' | 'analysis' | 'outline' | 'script' | 'storyboard' | 'exports' | 'jobs';
 
@@ -100,23 +101,31 @@ interface ProjectWorkspaceClientProps {
   };
 }
 
-export function ProjectWorkspaceClient({
+export function ProjectWorkspaceClient(props: ProjectWorkspaceClientProps) {
+  return (
+    <ProjectWorkspaceProvider
+      projectId={props.project.id}
+      initialJobs={props.jobs}
+      initialArtifacts={props.artifacts}
+      initialArtifactRelations={props.artifactRelations}
+    >
+      <ProjectWorkspaceLayout {...props} />
+    </ProjectWorkspaceProvider>
+  );
+}
+
+function ProjectWorkspaceLayout({
   locale,
   project,
   initialSourceTitle,
   initialSourceText,
-  jobs: initialJobs,
-  artifacts: initialArtifacts,
-  artifactRelations: initialArtifactRelations,
   labels,
 }: ProjectWorkspaceClientProps) {
+  const { jobs, artifacts, artifactRelations, hasActiveJobs, refreshProjectBundle } = useProjectWorkspace();
   const copy = getWorkspaceCopy(locale);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>('source');
   const [sourceTitle, setSourceTitle] = useState(initialSourceTitle);
   const [sourceText, setSourceText] = useState(initialSourceText);
-  const [jobs, setJobs] = useState(initialJobs);
-  const [artifacts, setArtifacts] = useState(initialArtifacts);
-  const [artifactRelations, setArtifactRelations] = useState(initialArtifactRelations);
   const [selectedScriptArtifactId, setSelectedScriptArtifactId] = useState<string | null>(null);
   const [genre, setGenre] = useState(project.genre ?? 'urban');
   const [episodeCount, setEpisodeCount] = useState(5);
@@ -137,29 +146,7 @@ export function ProjectWorkspaceClient({
     [artifacts, jobs, latestScriptArtifact, sourceText]
   );
 
-  useEffect(() => {
-    if (!hasActiveJobs) {
-      return;
-    }
 
-    const timer = window.setInterval(() => {
-      startTransition(() => {
-        void refreshProjectBundle();
-      });
-    }, 2000);
-
-    return () => window.clearInterval(timer);
-  }, [hasActiveJobs, project.id]);
-
-  async function refreshProjectBundle() {
-    const response = await fetch(`/api/projects/${project.id}`);
-    const payload = await response.json();
-    if (payload.ok) {
-      setJobs(payload.jobs);
-      setArtifacts(payload.artifacts);
-      setArtifactRelations(payload.artifactRelations ?? []);
-    }
-  }
 
   async function handleSaveSource() {
     setSaving(true);
@@ -300,23 +287,9 @@ export function ProjectWorkspaceClient({
   }
 
   return (
-    <div className="workspace-shell stack-gap-lg">
-      <section className="workspace-hero">
-        <div>
-          <a href={`/${locale}/projects`} className="inline-link">{labels.backToProjects}</a>
-          <h1>{project.name}</h1>
-          <p>{project.description || labels.sourceHint}</p>
-        </div>
-      </section>
-
-      <PipelineProgressBar
-        title={copy.pipelineTitle}
-        subtitle={copy.pipelineSubtitle}
-        stages={pipelineStages}
-        jobs={jobs}
-      />
-
-      <section className="segmented-control">
+    <div className="workspace-layout">
+      <main className="workspace-main">
+        <section className="segmented-control">
         {[
           { id: 'source', label: copy.sourceTab },
           { id: 'analysis', label: labels.analysisTab },
@@ -382,6 +355,7 @@ export function ProjectWorkspaceClient({
           hideKindTabs
           labels={labels}
           onVersionSaved={refreshProjectBundle}
+          isGenerating={hasActiveJobs}
         />
       ) : null}
 
@@ -396,6 +370,7 @@ export function ProjectWorkspaceClient({
           hideKindTabs
           labels={labels}
           onVersionSaved={refreshProjectBundle}
+          isGenerating={hasActiveJobs}
         />
       ) : null}
 
@@ -413,6 +388,7 @@ export function ProjectWorkspaceClient({
           selectedArtifactId={selectedScriptArtifactId}
           labels={labels}
           onVersionSaved={refreshProjectBundle}
+          isGenerating={hasActiveJobs}
         />
       ) : null}
 
@@ -461,6 +437,24 @@ export function ProjectWorkspaceClient({
           onCancelJob={(job) => handleJobAction(job, 'cancel')}
         />
       ) : null}
+      </main>
+
+      <aside className="workspace-sidebar">
+        <section className="workspace-hero">
+          <div>
+            <a href={`/${locale}/projects`} className="inline-link">{labels.backToProjects}</a>
+            <h1>{project.name}</h1>
+            <p>{project.description || labels.sourceHint}</p>
+          </div>
+        </section>
+
+        <PipelineProgressBar
+          title={copy.pipelineTitle}
+          subtitle={copy.pipelineSubtitle}
+          stages={pipelineStages}
+          jobs={jobs}
+        />
+      </aside>
     </div>
   );
 }
@@ -623,20 +617,20 @@ function getWorkspaceCopy(locale: SupportedLocale) {
   }
 
   return {
-    sourceTab: '原文',
-    storyboardTab: '分镜',
-    exportsTab: '导出',
-    jobsTab: '任务',
-    pipelineTitle: '流程进度',
-    pipelineSubtitle: '跟踪当前项目从原文到分镜的阶段状态。',
-    pipelineAction: '一键生成分镜',
-    pipelineStarted: '已启动一键生成分镜流程',
-    storyboardStarted: '已创建分镜任务',
-    storyboardFromVersion: '从此版本生成分镜',
-    storyboardSubtitle: '浏览分镜版本、下载结果和来源关系。',
-    scriptSubtitle: '编辑剧本版本，并从指定版本继续生成分镜。',
-    assetsTitle: '资产浏览器',
-    assetsSubtitle: '统一筛选、预览和下载项目内全部资产。',
-    jobsSubtitle: '查看排队、运行、失败和完成的生成任务。',
+    sourceTab: '小说素材',
+    storyboardTab: '视觉分镜',
+    exportsTab: '作品导出',
+    jobsTab: '生成历史',
+    pipelineTitle: '项目推演进度',
+    pipelineSubtitle: '掌控从小说解析到成片分镜的全链路流转状态。',
+    pipelineAction: '启动全链路智能生成',
+    pipelineStarted: '已下发全链路生成指令',
+    storyboardStarted: '已触发分镜转化列队',
+    storyboardFromVersion: '基于当前定稿推演分镜',
+    storyboardSubtitle: '预览画面视觉稿、下载分镜资产包及溯源设定。',
+    scriptSubtitle: '修订并确认分场口水稿，作为下一步分镜的定海神针。',
+    assetsTitle: '项目资源库',
+    assetsSubtitle: '云端网盘化管理小说衍生出的所有剧本与图像资产。',
+    jobsSubtitle: '追踪历次推演与修改产生的后台自动打磨任务。',
   };
 }

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { AdminClient } from '@/features/saas/AdminClient';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { requireViewerForLocalizedPage } from '@/server/auth/http';

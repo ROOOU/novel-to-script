@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { BillingClient } from '@/features/saas/BillingClient';
 import { getDictionary } from '@/i18n/get-dictionary';
 import { requireViewerForLocalizedPage } from '@/server/auth/http';

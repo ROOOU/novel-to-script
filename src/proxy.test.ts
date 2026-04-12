@@ -176,6 +176,22 @@ describe('proxy', () => {
     );
   });
 
+  it('redirects unauthenticated unsupported-locale page routes without mangling the path', async () => {
+    // Regression: /ko/projects was producing redirect_url=/zh-CNojects because
+    // the slice used the fallback locale length (zh-CN = 6) on the original pathname
+    // (/ko/projects), cutting off the first 7 chars and leaving "ojects".
+    const proxy = (await import('@/proxy')).default as any;
+    const response = (await proxy(
+      async () => ({ userId: null }),
+      new NextRequest('https://app.012294.xyz/ko/projects')
+    )) as Response;
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe(
+      'https://app.012294.xyz/zh-CN/login?redirect_url=%2Fzh-CN%2Fprojects'
+    );
+  });
+
   it('allows authenticated protected page routes through', async () => {
     const proxy = (await import('@/proxy')).default as any;
     const response = (await proxy(

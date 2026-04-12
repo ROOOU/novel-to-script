@@ -28,7 +28,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body className={`${sans.variable} ${display.variable}`}>
-        <ClerkProvider>{children}</ClerkProvider>
+        <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up">{children}</ClerkProvider>
       </body>
     </html>
   );

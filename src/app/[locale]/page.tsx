@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { redirect } from 'next/navigation';
 import { LandingPage } from '@/features/landing/LandingPage';
 import { getDictionary } from '@/i18n/get-dictionary';

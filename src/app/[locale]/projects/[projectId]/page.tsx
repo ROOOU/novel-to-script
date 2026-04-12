@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { notFound } from 'next/navigation';
 import { ProjectWorkspaceClient } from '@/features/saas/ProjectWorkspaceClient';
 import { getDictionary } from '@/i18n/get-dictionary';

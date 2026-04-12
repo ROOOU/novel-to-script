@@ -62,7 +62,11 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
     if (!authState.userId) {
       logAuthDebug('page_unauthorized', request);
       const locale = resolveRequestLocale(request);
-      const localizedPath = request.nextUrl.pathname.slice(locale.length + 1) || '/';
+      // Use the actual first segment length from the pathname so that unsupported
+      // locale prefixes (e.g. /ko/) don't cause the slice to eat into the real path.
+      const firstSegment = request.nextUrl.pathname.split('/').filter(Boolean)[0] ?? '';
+      const segmentLength = firstSegment.length + 1; // +1 for the leading slash
+      const localizedPath = request.nextUrl.pathname.slice(segmentLength) || '/';
       return NextResponse.redirect(
         new URL(buildLocalizedLoginRedirect(locale, `${localizedPath}${request.nextUrl.search}`), request.url)
       );
