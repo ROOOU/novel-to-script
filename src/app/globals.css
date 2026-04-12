@@ -285,13 +285,12 @@ h3,
 }
 
 .workspace-layout {
-  max-width: 1600px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 24px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  display: flex;
+  flex-direction: column;
   gap: 24px;
-  align-items: flex-start;
 }
 
 @media (max-width: 1024px) {

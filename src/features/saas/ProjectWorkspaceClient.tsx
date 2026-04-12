@@ -291,11 +291,8 @@ function ProjectWorkspaceLayout({
         <section className="segmented-control">
         {[
           { id: 'source', label: copy.sourceTab },
-          { id: 'analysis', label: labels.analysisTab },
-          { id: 'outline', label: labels.outlineTab },
           { id: 'script', label: labels.scriptTab },
           { id: 'storyboard', label: copy.storyboardTab },
-          { id: 'exports', label: copy.exportsTab },
           { id: 'jobs', label: copy.jobsTab },
         ].map((tab) => (
           <button
@@ -310,7 +307,7 @@ function ProjectWorkspaceLayout({
       </section>
 
       {activeTab === 'source' ? (
-        <section className="workspace-grid">
+        <section className="workspace-single">
           <SourceEditorPanel
             labels={labels}
             sourceTitle={sourceTitle}
@@ -333,77 +330,28 @@ function ProjectWorkspaceLayout({
             onRunScript={handleRunScript}
             onRunPipeline={handleRunPipeline}
           />
-          <AssetBrowserPanel
-            title={copy.assetsTitle}
-            subtitle={copy.assetsSubtitle}
-            artifacts={artifacts.filter((artifact) => artifact.kind !== 'export')}
-            artifactRelations={artifactRelations}
-            jobs={jobs}
-          />
         </section>
       ) : null}
 
-      {activeTab === 'analysis' ? (
-        <ProjectArtifactStudioPanel
-          locale={locale}
-          title={labels.analysisTab}
-          subtitle={labels.artifactStudioSubtitle}
-          artifacts={artifacts}
-          allowedKinds={['analysis']}
-          initialKind="analysis"
-          hideKindTabs
-          labels={labels}
-          onVersionSaved={refreshProjectBundle}
-          isGenerating={hasActiveJobs}
-        />
-      ) : null}
 
-      {activeTab === 'outline' ? (
-        <ProjectArtifactStudioPanel
-          locale={locale}
-          title={labels.outlineTab}
-          subtitle={labels.artifactStudioSubtitle}
-          artifacts={artifacts}
-          allowedKinds={['outline']}
-          initialKind="outline"
-          hideKindTabs
-          labels={labels}
-          onVersionSaved={refreshProjectBundle}
-          isGenerating={hasActiveJobs}
-        />
-      ) : null}
 
       {activeTab === 'script' ? (
-        <ProjectArtifactStudioPanel
-          locale={locale}
-          title={labels.scriptTab}
-          subtitle={copy.scriptSubtitle}
-          artifacts={artifacts}
-          allowedKinds={['script']}
-          initialKind="script"
-          hideKindTabs
-          scriptPrimaryActionLabel={copy.storyboardFromVersion}
-          onRunScriptPrimaryAction={handleRunStoryboardFromArtifact}
-          selectedArtifactId={selectedScriptArtifactId}
-          labels={labels}
-          onVersionSaved={refreshProjectBundle}
-          isGenerating={hasActiveJobs}
-        />
-      ) : null}
-
-      {activeTab === 'storyboard' ? (
-        <StoryboardPanel
-          title={copy.storyboardTab}
-          subtitle={copy.storyboardSubtitle}
-          artifacts={artifacts}
-          artifactRelations={artifactRelations}
-          jobs={jobs}
-          onSelectSourceArtifact={handleSelectStoryboardSourceArtifact}
-        />
-      ) : null}
-
-      {activeTab === 'exports' ? (
-        <section className="workspace-grid">
+        <div className="stack-gap-lg">
+          <ProjectArtifactStudioPanel
+            locale={locale}
+            title={labels.scriptTab}
+            subtitle={copy.scriptSubtitle}
+            artifacts={artifacts}
+            allowedKinds={['script']}
+            initialKind="script"
+            hideKindTabs
+            scriptPrimaryActionLabel={copy.storyboardFromVersion}
+            onRunScriptPrimaryAction={handleRunStoryboardFromArtifact}
+            selectedArtifactId={selectedScriptArtifactId}
+            labels={labels}
+            onVersionSaved={refreshProjectBundle}
+            isGenerating={hasActiveJobs}
+          />
           <ProjectExportPanel
             projectId={project.id}
             title={labels.exportsTitle}
@@ -416,14 +364,32 @@ function ProjectWorkspaceLayout({
             exports={artifacts.filter((artifact) => artifact.kind === 'export')}
             onExportCreated={refreshProjectBundle}
           />
-          <AssetBrowserPanel
-            title={copy.assetsTitle}
-            subtitle={copy.assetsSubtitle}
+        </div>
+      ) : null}
+
+      {activeTab === 'storyboard' ? (
+        <div className="stack-gap-lg">
+          <StoryboardPanel
+            title={copy.storyboardTab}
+            subtitle={copy.storyboardSubtitle}
             artifacts={artifacts}
             artifactRelations={artifactRelations}
             jobs={jobs}
+            onSelectSourceArtifact={handleSelectStoryboardSourceArtifact}
           />
-        </section>
+          <ProjectExportPanel
+            projectId={project.id}
+            title={labels.exportsTitle}
+            subtitle={labels.exportsSubtitle}
+            markdownLabel={labels.exportMarkdown}
+            jsonLabel={labels.exportJson}
+            textLabel={labels.exportText}
+            latestExportsLabel={labels.latestExports}
+            downloadLabel={labels.downloadExport}
+            exports={artifacts.filter((artifact) => artifact.kind === 'export')}
+            onExportCreated={refreshProjectBundle}
+          />
+        </div>
       ) : null}
 
       {activeTab === 'jobs' ? (
@@ -437,23 +403,6 @@ function ProjectWorkspaceLayout({
         />
       ) : null}
       </main>
-
-      <aside className="workspace-sidebar">
-        <section className="workspace-hero">
-          <div>
-            <a href={`/${locale}/projects`} className="inline-link">{labels.backToProjects}</a>
-            <h1>{project.name}</h1>
-            <p>{project.description || labels.sourceHint}</p>
-          </div>
-        </section>
-
-        <PipelineProgressBar
-          title={copy.pipelineTitle}
-          subtitle={copy.pipelineSubtitle}
-          stages={pipelineStages}
-          jobs={jobs}
-        />
-      </aside>
     </div>
   );
 }
