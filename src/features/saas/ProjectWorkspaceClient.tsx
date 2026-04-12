@@ -135,7 +135,6 @@ function ProjectWorkspaceLayout({
   const [runningKind, setRunningKind] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  const hasActiveJobs = jobs.some((job) => job.status === 'queued' || job.status === 'running');
   const latestScriptArtifact = useMemo(() => {
     return [...artifacts]
       .filter((artifact) => artifact.kind === 'script')
