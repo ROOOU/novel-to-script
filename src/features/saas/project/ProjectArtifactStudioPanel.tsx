@@ -20,7 +20,7 @@ import { ScriptEditor } from './editors/ScriptEditor';
 
 type ArtifactKind = 'analysis' | 'outline' | 'script';
 
-interface ProjectArtifactStudioPanelProps {
+export interface ProjectArtifactStudioPanelProps {
   locale: SupportedLocale;
   title: string;
   subtitle: string;
