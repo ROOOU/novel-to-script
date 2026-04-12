@@ -81,6 +81,11 @@ export default clerkMiddleware(async (auth, request: NextRequest) => {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
     pathname.startsWith('/v1') ||
+    // Clerk's internal OAuth callback routes must never be intercepted
+    pathname.includes('/sso-callback') ||
+    pathname.includes('/factor-one') ||
+    pathname.includes('/factor-two') ||
+    pathname.includes('/continue') ||
     pathname === '/sign-in' ||
     pathname.startsWith('/sign-in/') ||
     pathname === '/sign-up' ||
@@ -160,7 +165,14 @@ function logAuthDebug(reason: 'api_unauthorized' | 'page_unauthorized', request:
 
 export const config = {
   matcher: [
-    '/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)',
+    /*
+     * Match all request paths EXCEPT:
+     * - _next/static (static files)
+     * - _next/image (image optimization)
+     * - favicon.ico
+     * - Clerk sso-callback, factor, and continue paths (OAuth handshake)
+     */
+    '/((?!_next/static|_next/image|favicon\.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$|.*sso-callback.*|.*factor-one.*|.*factor-two.*|\.well-known).*)',
     '/(api|trpc)(.*)',
   ],
 };
