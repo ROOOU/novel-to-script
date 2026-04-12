@@ -186,7 +186,7 @@ export function StoryboardPanel({
                   </span>
                 </div>
                 <pre className="artifact-preview">
-                  {selectedArtifact.content?.trim() || mergedLabels.contentEmpty}
+                  {sanitizeStoryboardContent(selectedArtifact.content?.trim() ?? '') || mergedLabels.contentEmpty}
                 </pre>
               </div>
 
@@ -361,11 +361,21 @@ function shortenId(value: string) {
   return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
-function excerpt(value: string) {
-  const normalized = value.trim().replace(/\s+/g, ' ');
-  if (normalized.length <= 180) {
+function sanitizeStoryboardContent(content: string): string {
+  return content
+    // Remove full lines that are only decoration characters (═, =, -, ─, ━, ·)
+    .replace(/^[\s═=\-─━·]{4,}$/gm, '')
+    // Collapse 3+ consecutive blank lines down to 2
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function excerpt(value: string): string {
+  const cleaned = sanitizeStoryboardContent(value);
+  const normalized = cleaned.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 200) {
     return normalized;
   }
 
-  return `${normalized.slice(0, 180)}…`;
+  return `${normalized.slice(0, 200)}…`;
 }

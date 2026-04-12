@@ -3,6 +3,10 @@
 import { useMemo, useState } from 'react';
 import type { GenerationArtifact } from '@/server/shared/platform/domain';
 
+function Spinner() {
+  return <span className="btn-spinner" aria-hidden="true" />;
+}
+
 interface ProjectExportPanelProps {
   projectId: string;
   title: string;
@@ -63,27 +67,27 @@ export function ProjectExportPanel({
       <div className="action-row">
         <button
           type="button"
-          className="primary-button"
+          className="primary-button btn-with-spinner"
           disabled={runningFormat !== null}
           onClick={() => handleExport('markdown')}
         >
-          {runningFormat === 'markdown' ? `${markdownLabel}...` : markdownLabel}
+          {runningFormat === 'markdown' ? <><Spinner />导出中…</> : markdownLabel}
         </button>
         <button
           type="button"
-          className="secondary-button"
+          className="secondary-button btn-with-spinner"
           disabled={runningFormat !== null}
           onClick={() => handleExport('json')}
         >
-          {runningFormat === 'json' ? `${jsonLabel}...` : jsonLabel}
+          {runningFormat === 'json' ? <><Spinner />导出中…</> : jsonLabel}
         </button>
         <button
           type="button"
-          className="secondary-button"
+          className="secondary-button btn-with-spinner"
           disabled={runningFormat !== null}
           onClick={() => handleExport('text')}
         >
-          {runningFormat === 'text' ? `${textLabel}...` : textLabel}
+          {runningFormat === 'text' ? <><Spinner />导出中…</> : textLabel}
         </button>
       </div>
 

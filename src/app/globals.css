@@ -535,6 +535,36 @@ h3,
   border-color: var(--border-hover);
 }
 
+/* ===== 按钮 loading 状态 ===== */
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: btn-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn-with-spinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.primary-button:disabled,
+.secondary-button:disabled,
+.ghost-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
 .landing-hero .primary-button {
   min-width: 184px;
   background: linear-gradient(135deg, #6ee7b7, #4f46e5);

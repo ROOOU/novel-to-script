@@ -18,6 +18,10 @@ import { AnalysisEditor } from './editors/AnalysisEditor';
 import { OutlineEditor } from './editors/OutlineEditor';
 import { ScriptEditor } from './editors/ScriptEditor';
 
+function Spinner() {
+  return <span className="btn-spinner" aria-hidden="true" />;
+}
+
 type ArtifactKind = 'analysis' | 'outline' | 'script';
 
 export interface ProjectArtifactStudioPanelProps {
@@ -511,11 +515,11 @@ export function ProjectArtifactStudioPanel({
             ) : null}
 
             <div className="action-row">
-              <button type="button" className="secondary-button" onClick={resetDraft}>
+              <button type="button" className="secondary-button btn-with-spinner" onClick={resetDraft} disabled={saving}>
                 {labels.resetDraft}
               </button>
-              <button type="button" className="primary-button" onClick={handleSaveVersion} disabled={saving}>
-                {labels.saveVersion}
+              <button type="button" className="primary-button btn-with-spinner" onClick={handleSaveVersion} disabled={saving}>
+                {saving ? <><Spinner />保存中…</> : labels.saveVersion}
               </button>
             </div>
             {message ? <p className="helper-text">{message}</p> : null}

@@ -34,6 +34,10 @@ interface SourceEditorPanelProps {
   onRunPipeline: () => void;
 }
 
+function Spinner() {
+  return <span className="btn-spinner" aria-hidden="true" />;
+}
+
 export function SourceEditorPanel({
   labels,
   sourceTitle,
@@ -56,6 +60,10 @@ export function SourceEditorPanel({
   onRunScript,
   onRunPipeline,
 }: SourceEditorPanelProps) {
+  const isRunningScript = runningKind === 'script';
+  const isRunningPipeline = runningKind === 'pipeline';
+  const anyRunning = isRunningScript || isRunningPipeline || saving;
+
   return (
     <article className="card stack-gap">
       <div>
@@ -101,17 +109,33 @@ export function SourceEditorPanel({
         </label>
       </div>
       <div className="action-row">
-        <button type="button" className="secondary-button" onClick={onSaveSource} disabled={saving}>
-          {labels.saveSource}
+        <button
+          type="button"
+          className="secondary-button btn-with-spinner"
+          onClick={onSaveSource}
+          disabled={saving || anyRunning}
+        >
+          {saving ? <><Spinner />{labels.saveSource}…</> : labels.saveSource}
         </button>
-        <button type="button" className="primary-button" onClick={onRunScript} disabled={runningKind === 'script' || !sourceText.trim()}>
-          {labels.generateScript}
+        <button
+          type="button"
+          className="primary-button btn-with-spinner"
+          onClick={onRunScript}
+          disabled={isRunningScript || !sourceText.trim() || anyRunning}
+        >
+          {isRunningScript ? <><Spinner />生成中…</> : labels.generateScript}
         </button>
-        <button type="button" className="secondary-button" onClick={onRunPipeline} disabled={runningKind === 'pipeline' || !sourceText.trim()}>
-          {pipelineActionLabel ?? labels.generateStoryboard}
+        <button
+          type="button"
+          className="secondary-button btn-with-spinner"
+          onClick={onRunPipeline}
+          disabled={isRunningPipeline || !sourceText.trim() || anyRunning}
+        >
+          {isRunningPipeline ? <><Spinner />生成中…</> : (pipelineActionLabel ?? labels.generateStoryboard)}
         </button>
       </div>
       {message ? <p className="helper-text">{message}</p> : null}
     </article>
   );
 }
+
