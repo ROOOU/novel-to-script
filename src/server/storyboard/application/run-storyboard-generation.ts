@@ -15,6 +15,7 @@ import {
 } from '@/server/shared/platform';
 import { withProgressHeartbeat } from '@/server/generation/progress-heartbeat';
 import { extractCharacters, extractScenes } from './extract-helpers';
+import { compilePromptPack } from '@/server/storyboard/prompt-compiler';
 import { buildStoryboardUsageEvent, type StoryboardGenerationExecutionOptions } from './types';
 
 export function getStoryboardRequestError(
@@ -114,19 +115,88 @@ export async function runStoryboardGeneration(
         resolvedGenreLabel
       );
 
-  try {
-    const fullContent = await withProgressHeartbeat(
+  const generateStoryboardDraft = (draftPrompt: string) =>
+    withProgressHeartbeat(
       {
         onProgress,
         progress: 30,
         currentStep: 'generating',
         outputSummary: 'storyboard drafting',
       },
-      () => streamStoryboard(systemPrompt, userPrompt, send, llmConfig)
+      () => streamStoryboard(systemPrompt, draftPrompt, send, llmConfig)
     );
+
+  let fullContent = '';
+  let safetyFallbackApplied = false;
+  let safetyFallbackMode: 'summary-retry' | 'local-template' | null = null;
+
+  try {
+    fullContent = await generateStoryboardDraft(userPrompt);
+  } catch (error) {
+    if (!isContentPolicyError(error)) {
+      throw error;
+    }
+
+    if (!body.safeMode) {
+      send({
+        step: 'content_policy_blocked',
+        message: '安全内容错误：当前剧本包含模型安全策略拦截的描述。',
+        retryPrompt: '是否继续以安全影视化模式重试？',
+      });
+      await onProgress?.({
+        progress: 0,
+        currentStep: 'content_policy_blocked',
+        outputSummary: 'retry in safe mode',
+      });
+      return;
+    }
+
+    send({
+      step: 'safety_retry',
+      message: '安全影视化模式首次生成仍被拦截，正在切换到摘要化安全重试...',
+    });
+    await onProgress?.({
+      progress: 35,
+      currentStep: 'safety_retry',
+      outputSummary: 'storyboard safety retry',
+    });
+
+    const retryScriptText = buildSafeStoryboardRetrySource(scriptText, characters, scenes);
+    const retryUserPrompt = getStoryboardSafeUserPrompt(
+      retryScriptText,
+      resolvedVisualStyle,
+      resolvedColorTone,
+      resolvedGenreLabel
+    );
+
+    try {
+      fullContent = await generateStoryboardDraft(retryUserPrompt);
+      safetyFallbackApplied = true;
+      safetyFallbackMode = 'summary-retry';
+    } catch (retryError) {
+      if (isContentPolicyError(retryError)) {
+        fullContent = buildLocalSafeStoryboardOutput({
+          scriptText,
+          characters,
+          scenes,
+          visualStyle: resolvedVisualStyle,
+          colorTone: resolvedColorTone,
+          genreLabel: resolvedGenreLabel,
+        });
+        safetyFallbackApplied = true;
+        safetyFallbackMode = 'local-template';
+      } else {
+        throw retryError;
+      }
+    }
+  }
+
+  try {
     const parsedOutput = resolveStoryboardOutput(fullContent);
     const metadata: StoryboardMetadata = {
       safeMode: Boolean(body.safeMode),
+      ...(safetyFallbackApplied ? { safetyFallbackApplied: true } : {}),
+      ...(safetyFallbackMode ? { safetyFallbackMode } : {}),
       characters,
       scenes,
       shots: parsedOutput.shots,
@@ -152,6 +222,10 @@ export async function runStoryboardGeneration(
             ? '分镜提示词生成完成，部分结构化镜头已保留，其余镜头已从文本补齐。'
             : '分镜提示词生成完成，结构化 JSON 未完全命中，已从文本补齐镜头清单。'
           : '分镜提示词生成完成，结构化镜头清单解析失败，已保留文本结果。'
+        : safetyFallbackMode === 'local-template'
+          ? '安全影视化模式生成完成，已启用本地安全兜底分镜。'
+        : safetyFallbackApplied
+          ? '安全影视化模式生成完成，已启用二次降敏重试。'
         : body.safeMode
           ? '安全影视化模式生成完成！'
           : '分镜提示词生成完成！',
@@ -163,6 +237,37 @@ export async function runStoryboardGeneration(
       format: 'text/plain',
       content: parsedOutput.textContent,
       metadata,
+    });
+    await onArtifact?.({
+      kind: 'shot_plan',
+      title: '结构化镜头计划',
+      format: 'application/json',
+      content: JSON.stringify(parsedOutput.shots, null, 2),
+      metadata: {
+        ...metadata,
+        downloadFilename: 'shot-plan.json',
+      },
+    });
+    await onArtifact?.({
+      kind: 'prompt_pack',
+      title: '视频提示词包',
+      format: 'application/json',
+      content: JSON.stringify(
+        compilePromptPack(parsedOutput.shots, {
+          visualStyle: resolvedVisualStyle,
+          colorTone: resolvedColorTone,
+          genreLabel: resolvedGenreLabel,
+          safeMode: body.safeMode,
+          targetPlatform: body.targetPlatform,
+        }),
+        null,
+        2
+      ),
+      metadata: {
+        ...metadata,
+        targetPlatform: body.targetPlatform ?? 'generic-video',
+        downloadFilename: 'prompt-pack.json',
+      },
     });
     usageMeter?.record(
       buildStoryboardUsageEvent(context, 1, 'request', {
@@ -178,7 +283,11 @@ export async function runStoryboardGeneration(
         ? parsedOutput.shots.length > 0
           ? `storyboard generated;shots:${parsedOutput.shots.length};fallback:${parsedOutput.parseFallbackMode ?? 'text-derived'}`
           : `storyboard generated;shots:${parsedOutput.shots.length};fallback:text-only`
-        : `storyboard generated;shots:${parsedOutput.shots.length}`,
+        : safetyFallbackMode === 'local-template'
+          ? `storyboard generated;shots:${parsedOutput.shots.length};safetyFallback:local-template`
+        : safetyFallbackApplied
+          ? `storyboard generated;shots:${parsedOutput.shots.length};safetyFallback:summary-retry`
+          : `storyboard generated;shots:${parsedOutput.shots.length}`,
     });
   } catch (error) {
     if (!isContentPolicyError(error)) {
@@ -883,18 +992,253 @@ function isContentPolicyError(error: unknown): boolean {
   ].some((keyword) => message.includes(keyword));
 }
 
-function softenSensitiveContent(text: string): string {
+export function softenSensitiveContent(text: string): string {
   const replacements: Array<[RegExp, string]> = [
     [/(强奸|性侵|猥亵|迷奸|轮奸)/gi, '强迫伤害'],
     [/(性交|做爱|性爱|床戏|上床|裸露|赤裸|下体|乳房|呻吟)/gi, '亲密行为'],
     [/(杀人|捅死|砍死|爆头|割喉|血肉模糊|尸体|碎尸)/gi, '激烈冲突'],
     [/(自杀|跳楼|割腕|上吊)/gi, '危险场面'],
     [/(吸毒|贩毒|毒品)/gi, '违禁物品'],
+    [/(追杀|追捕|追缉|围剿|屠杀|灭口)/gi, '紧张追逐'],
+    [/(战场|战事|大战|厮杀|交战|大军|兵卫|士兵|军队|兵马)/gi, '阵营对峙'],
+    [/(兵器|刀剑|长枪|弓弩|火器|炸药|爆炸)/gi, '紧张道具'],
+    [/(审问|拷打|刑讯|逼供|威胁)/gi, '强势施压'],
+    [/(黑市|地下交易|走私|违禁交易)/gi, '灰色交易传闻'],
+    [/(封印失控|错误触发|崩塌|坍塌|毁灭|覆灭)/gi, '局势失衡'],
+    [/(夺走|掠夺|绑走|囚禁)/gi, '强行带离'],
+    [/(民乱|暴动|叛乱)/gi, '局势动荡'],
+    [/(鲜血|流血|血迹|血腥)/gi, '危险痕迹'],
   ];
 
-  return replacements.reduce((result, [pattern, replacement]) => {
+  const softened = replacements.reduce((result, [pattern, replacement]) => {
     return result.replace(pattern, replacement);
   }, text);
+
+  return softened
+    .replace(/(详细|清楚|完整)描述(伤害|违法|危险)(过程|细节)/gi, '描述场面张力')
+    .replace(/如何(伤害|报复|复仇|逃脱)/gi, '如何应对当前局面')
+    .replace(/(立刻|马上)?处死/gi, '立刻处置')
+    .replace(/见血封喉/gi, '迅速压制局面');
+}
+
+function buildSafeStoryboardRetrySource(
+  scriptText: string,
+  characters: string[],
+  scenes: string[]
+): string {
+  const normalizedCharacters = normalizeSafeStoryboardCharacters(characters);
+  const normalizedScenes = collectSafeStoryboardScenes(scriptText, scenes);
+  const lines = scriptText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  const dialogueLines = lines
+    .filter((line) => /[:：]/.test(line))
+    .slice(0, 18)
+    .map((line, index) => {
+      const separatorIndex = Math.max(line.indexOf('：'), line.indexOf(':'));
+      const rawSpeaker = separatorIndex >= 0 ? line.slice(0, separatorIndex).trim() : `角色${index + 1}`;
+      const speaker = normalizeSafeStoryboardCharacter(rawSpeaker, index);
+      const content = separatorIndex >= 0 ? line.slice(separatorIndex + 1).trim() : line;
+      return `台词${index + 1}：${speaker}表达“${normalizeSafeStoryboardSentence(content, 32)}”`;
+    });
+
+  const stageLines = lines
+    .filter((line) => !/[:：]/.test(line))
+    .slice(0, 12)
+    .map((line, index) => `动作${index + 1}：${normalizeSafeStoryboardSentence(line, 40)}`);
+
+  const sceneSummaries = (normalizedScenes.length > 0 ? normalizedScenes : ['主要场景'])
+    .slice(0, 8)
+    .map(
+      (scene, index) =>
+        `场景${index + 1}：${normalizeSafeStoryboardSentence(scene, 24)}。镜头重点：人物交流、表情变化、局势张力、空间调度。`
+    );
+
+  return [
+    '以下内容为安全影视化摘要，请仅依据这些摘要生成分镜。',
+    `角色：${normalizedCharacters.length > 0 ? normalizedCharacters.join('、') : '核心角色群像'}`,
+    ...sceneSummaries,
+    ...(dialogueLines.length > 0 ? dialogueLines : ['台词重点：角色围绕当前局势展开克制交流。']),
+    ...(stageLines.length > 0 ? stageLines : ['动作重点：以人物出场、停顿、对视、转身、推进镜头为主。']),
+    '统一要求：突出悬念感、调查感、关系张力与镜头运动，不描写伤害细节、违法过程或危险后果。',
+  ].join('\n');
+}
+
+function normalizeSafeStoryboardSentence(text: string, maxLength: number): string {
+  const softened = softenSensitiveContent(text)
+    .replace(/[「」"'`]/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/[^\p{L}\p{N}\p{Script=Han}，。？！、：:（）()《》\- ]/gu, '')
+    .trim();
+
+  if (softened.length <= maxLength) {
+    return softened;
+  }
+
+  return `${softened.slice(0, maxLength)}...`;
+}
+
+function buildLocalSafeStoryboardOutput(input: {
+  scriptText: string;
+  characters: string[];
+  scenes: string[];
+  visualStyle: string;
+  colorTone: string;
+  genreLabel: string;
+}): string {
+  const shots = buildLocalSafeStoryboardShots(input);
+  const groupedByScene = new Map<string, StoryboardShot[]>();
+
+  for (const shot of shots) {
+    const sceneShots = groupedByScene.get(shot.sceneId) ?? [];
+    sceneShots.push(shot);
+    groupedByScene.set(shot.sceneId, sceneShots);
+  }
+
+  const textBlocks = Array.from(groupedByScene.entries()).flatMap(([, sceneShots]) => {
+    const sceneName = sceneShots[0]?.environment ?? '主要场景';
+    const blocks = [`场景: ${sceneName}`];
+    sceneShots.forEach((shot, index) => {
+      blocks.push(
+        `分镜${toChineseIndex(index + 1)} 4s：时间：氛围镜头，场景图片：🖼️${sceneName}_0，镜头：${shot.shotType}，${shot.camera}，🧑 ${shot.subject}-基础形象-基础形象 ${shot.motion}，背景：${shot.audioHint}。${shot.camera}。`
+      );
+    });
+    return blocks;
+  });
+
+  return `${textBlocks.join('\n\n')}\n\n[SHOTS_JSON]\n\`\`\`json\n${JSON.stringify(shots, null, 2)}\n\`\`\``;
+}
+
+function buildLocalSafeStoryboardShots(input: {
+  scriptText: string;
+  characters: string[];
+  scenes: string[];
+  visualStyle: string;
+  colorTone: string;
+  genreLabel: string;
+}): StoryboardShot[] {
+  const scenes = collectSafeStoryboardScenes(input.scriptText, input.scenes).slice(0, 4);
+  const characters = normalizeSafeStoryboardCharacters(input.characters);
+  const shots: StoryboardShot[] = [];
+
+  (scenes.length > 0 ? scenes : ['主要场景']).forEach((scene, sceneIndex) => {
+    const sceneId = `S${String(sceneIndex + 1).padStart(2, '0')}`;
+    const primarySubject = characters[sceneIndex % characters.length] ?? '角色A';
+    const secondarySubject = characters[(sceneIndex + 1) % characters.length] ?? primarySubject;
+    const environment = normalizeSafeStoryboardSentence(scene, 20) || '主要场景';
+    const atmosphere = `${input.visualStyle}，${input.colorTone}，${input.genreLabel}`;
+
+    shots.push({
+      sceneId,
+      shotId: `${sceneId}-SH01`,
+      shotType: '中景',
+      camera: '缓慢推进',
+      composition: '单人主体构图',
+      motion: `${primarySubject}观察周围并整理情绪`,
+      subject: primarySubject,
+      environment,
+      lighting: `克制光影，${atmosphere}`,
+      audioHint: '环境音压低，保留风声与脚步声',
+      videoPrompt: `${environment}，中景，缓慢推进，${primarySubject}观察周围并整理情绪，克制光影，环境音压低`,
+    });
+
+    shots.push({
+      sceneId,
+      shotId: `${sceneId}-SH02`,
+      shotType: '近景',
+      camera: '固定机位',
+      composition: '双人对角构图',
+      motion: `${primarySubject}与${secondarySubject}交换眼神，局势保持紧张`,
+      subject: primarySubject === secondarySubject ? primarySubject : `${primarySubject}、${secondarySubject}`,
+      environment,
+      lighting: `人物面部补光，${atmosphere}`,
+      audioHint: '对话压低处理，突出停顿与呼吸',
+      videoPrompt: `${environment}，近景，固定机位，${primarySubject}与${secondarySubject}交换眼神，人物面部补光，对话压低处理`,
+    });
+  });
+
+  return shots;
+}
+
+function toChineseIndex(index: number): string {
+  return ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'][index - 1] ?? String(index);
+}
+
+function normalizeSafeStoryboardCharacters(characters: string[]): string[] {
+  const normalized = characters
+    .map((character, index) => normalizeSafeStoryboardCharacter(character, index))
+    .filter((character, index, values) => values.indexOf(character) === index);
+
+  return normalized.length > 0 ? normalized : ['角色A', '角色B'];
+}
+
+function normalizeSafeStoryboardCharacter(value: string, index: number): string {
+  const cleaned = value
+    .replace(/[^\p{L}\p{N}\p{Script=Han}]/gu, '')
+    .trim();
+
+  if (
+    cleaned.length < 2 ||
+    cleaned.length > 6 ||
+    /^(\d+|[A-Za-z]+)$/.test(cleaned) ||
+    /^([一二三四五六七八九十]+|[甲乙丙丁戊己庚辛壬癸])$/.test(cleaned)
+  ) {
+    return `角色${String.fromCharCode(65 + index)}`;
+  }
+
+  return cleaned;
+}
+
+function collectSafeStoryboardScenes(scriptText: string, scenes: string[]): string[] {
+  const explicitScenes = scenes
+    .map((scene) => normalizeSceneLabel(scene))
+    .filter((scene): scene is string => Boolean(scene));
+
+  if (explicitScenes.length > 0) {
+    return explicitScenes;
+  }
+
+  const lines = scriptText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const derivedScenes: string[] = [];
+  for (const line of lines) {
+    const sceneMatch =
+      line.match(/^\d+-\d+\s+(?:日|夜|晨|暮|黄昏)\s*(?:内|外|内外)\s*(.+)$/) ??
+      line.match(/^场景[:：]\s*(.+)$/);
+    if (!sceneMatch) {
+      continue;
+    }
+
+    const normalized = normalizeSceneLabel(sceneMatch[1] ?? '');
+    if (normalized && !derivedScenes.includes(normalized)) {
+      derivedScenes.push(normalized);
+    }
+  }
+
+  return derivedScenes;
+}
+
+function normalizeSceneLabel(value: string): string | null {
+  const cleaned = value
+    .replace(/[（(].*?[）)]/g, '')
+    .replace(/[^\p{L}\p{N}\p{Script=Han}\-、，。 ]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleaned || cleaned.length < 2) {
+    return null;
+  }
+
+  if (/[:：]/.test(cleaned) || /[「」]/.test(cleaned)) {
+    return null;
+  }
+
+  return cleaned.length > 18 ? `${cleaned.slice(0, 18)}...` : cleaned;
 }
 
 function normalizeStoryboardArtifactIds(ids: string[] | null | undefined): string[] {

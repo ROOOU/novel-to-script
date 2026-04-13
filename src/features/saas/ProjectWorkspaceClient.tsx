@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import { SUPPORTED_TEXT_FILE_ACCEPT } from '@/lib/file-text';
+import { GENRE_LABELS, GENRE_LABELS_EN, GENRE_VALUES } from '@/lib/types';
 import type {
   ArtifactRelation,
   GenerationArtifact,
@@ -12,7 +13,10 @@ import type {
 import { AssetBrowserPanel } from '@/features/saas/project/AssetBrowserPanel';
 import { JobTimelinePanel } from '@/features/saas/project/JobTimelinePanel';
 import { OnboardingChecklistPanel } from '@/features/saas/project/OnboardingChecklistPanel';
-import { PipelineProgressBar } from '@/features/saas/project/PipelineProgressBar';
+import {
+  PipelineProgressBar,
+  type PipelineStageStatus,
+} from '@/features/saas/project/PipelineProgressBar';
 import { deriveProjectPipelineStages } from '@/features/saas/project/pipeline-state';
 import { ProjectArtifactStudioPanel } from '@/features/saas/project/ProjectArtifactStudioPanel';
 import { ProjectExportPanel } from '@/features/saas/project/ProjectExportPanel';
@@ -29,6 +33,7 @@ import {
 import { buildProjectWorkspaceOnboardingSteps } from '@/features/saas/project/onboarding';
 
 type WorkspaceTab = 'source' | 'analysis' | 'outline' | 'script' | 'storyboard' | 'exports' | 'jobs';
+type WorkflowStageId = 'novel' | 'script' | 'storyboard';
 
 interface ProjectWorkspaceClientProps {
   locale: SupportedLocale;
@@ -238,6 +243,19 @@ export function ProjectWorkspaceClient({
   const exportArtifacts = artifacts.filter((artifact) => artifact.kind === 'export');
   const completedJobs = jobs.filter((job) => job.status === 'succeeded');
   const latestJob = jobs[0] ?? null;
+  const activeWorkflowStage = getWorkflowStageFromTab(activeTab);
+  const workflowStages = useMemo(
+    () =>
+      buildWorkflowStages(locale, {
+        pipelineStages,
+        sourceText,
+        scriptArtifacts,
+        storyboardArtifacts,
+        jobs,
+      }),
+    [jobs, locale, pipelineStages, scriptArtifacts, sourceText, storyboardArtifacts]
+  );
+  const workflowSubtabs = getWorkflowSubtabs(locale, labels, activeWorkflowStage);
   const workspaceOnboardingAction = useMemo(() => {
     const hasStoryboardArtifact = artifacts.some((artifact) => artifact.kind === 'storyboard');
     if (hasStoryboardArtifact) {
@@ -430,7 +448,7 @@ export function ProjectWorkspaceClient({
           storyboardConfig: {
             visualStyle: locale === 'en-US' ? 'cinematic realism' : '真人写实',
             colorTone: locale === 'en-US' ? 'warm tone' : '暖色调',
-            genreLabel: genre,
+            genreLabel: getGenreDisplayLabel(locale, genre),
           },
         },
       }),
@@ -469,7 +487,7 @@ export function ProjectWorkspaceClient({
           }),
           visualStyle: locale === 'en-US' ? 'cinematic realism' : '真人写实',
           colorTone: locale === 'en-US' ? 'warm tone' : '暖色调',
-          genreLabel: genre,
+          genreLabel: getGenreDisplayLabel(locale, genre),
         },
       }),
     });
@@ -552,7 +570,7 @@ export function ProjectWorkspaceClient({
           <h1>{project.name}</h1>
           <p>{project.description || labels.sourceHint}</p>
           <div className="project-hero-tags">
-            <span className="chip chip-soft">{project.genre ?? labels.genre}</span>
+            <span className="chip chip-soft">{getGenreDisplayLabel(locale, project.genre ?? labels.genre)}</span>
             <span className="chip chip-count">{`${jobs.length} ${copy.jobsTab}`}</span>
             <span className="chip chip-count">{`${artifacts.length} ${copy.assetsTitle}`}</span>
           </div>
@@ -577,6 +595,105 @@ export function ProjectWorkspaceClient({
       </section>
 
       <section className="workspace-flow-shell">
+        <div className="workflow-board">
+          <div className="workflow-board-header">
+            <div className="stack-gap-sm">
+              <span className="eyebrow">{locale === 'en-US' ? 'Generation flow' : '生成流程'}</span>
+              <h2>
+                {locale === 'en-US'
+                  ? 'Organize the workspace around Novel, Script, and Storyboard.'
+                  : '把工作台重组为「小说 / 剧本 / 分镜」三段式流程。'}
+              </h2>
+              <p className="helper-text">
+                {locale === 'en-US'
+                  ? 'The top area now highlights the three major phases, while the lower area stays focused on preview and editing.'
+                  : '顶部聚焦三大阶段，下面专门用于预览、编辑与审阅，阅读体验会更清晰。'}
+              </p>
+            </div>
+            <div className="workflow-board-actions">
+              <button
+                type="button"
+                className={`segment ${activeTab === 'exports' ? 'active' : ''}`}
+                onClick={() => setActiveTab('exports')}
+              >
+                {copy.exportsTab}
+              </button>
+              <button
+                type="button"
+                className={`segment ${activeTab === 'jobs' ? 'active' : ''}`}
+                onClick={() => setActiveTab('jobs')}
+              >
+                {copy.jobsTab}
+              </button>
+            </div>
+          </div>
+
+          <div className="workflow-stage-grid">
+            {workflowStages.map((stage) => (
+              <button
+                key={stage.id}
+                type="button"
+                className={`workflow-stage-card workflow-stage-card-${stage.tone} ${
+                  activeWorkflowStage === stage.id ? 'active' : ''
+                }`}
+                onClick={() => setActiveTab(stage.primaryTab)}
+              >
+                <div className="workflow-stage-card-top">
+                  <div className="workflow-stage-kicker">
+                    <span className="workflow-stage-index">{stage.index}</span>
+                    <span className={`status-pill status-pill-${stage.statusTone}`}>
+                      {stage.statusLabel}
+                    </span>
+                  </div>
+                  <span className="workflow-stage-meta">{stage.meta}</span>
+                </div>
+                <div className="workflow-stage-card-body">
+                  <h3>{stage.title}</h3>
+                  <p>{stage.description}</p>
+                </div>
+                <div className="workflow-stage-progress">
+                  <div className="workflow-stage-progress-track">
+                    <span
+                      className="workflow-stage-progress-fill"
+                      style={{ width: `${stage.progress}%` }}
+                    />
+                  </div>
+                  <div className="workflow-stage-stats">
+                    {stage.stats.map((item) => (
+                      <span key={item.label}>
+                        <strong>{item.value}</strong>
+                        {item.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="workflow-detail-bar">
+            <div className="workflow-detail-copy">
+              <span className="eyebrow">
+                {locale === 'en-US' ? 'Current lane' : '当前阶段'}
+              </span>
+              <h3>{getWorkspaceSectionCopy(locale, activeTab, labels, copy).title}</h3>
+              <p>{getWorkspaceSectionCopy(locale, activeTab, labels, copy).description}</p>
+            </div>
+            <div className="workflow-subnav">
+              {workflowSubtabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`segment ${activeTab === tab.id ? 'active' : ''}`}
+                  onClick={() => setActiveTab(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
         <PipelineProgressBar
           locale={locale}
           title={copy.pipelineTitle}
@@ -611,41 +728,7 @@ export function ProjectWorkspaceClient({
         ) : null}
       </section>
 
-      <section className="card workspace-tab-shell">
-        <div className="workspace-tab-header">
-          <div className="stack-gap-sm">
-            <span className="eyebrow">{locale === 'en-US' ? 'Workspace views' : '工作台视图'}</span>
-            <h2>{locale === 'en-US' ? 'Switch between source, versions, storyboard, and delivery.' : '在原文、版本、分镜与交付视图之间快速切换。'}</h2>
-          </div>
-          <p className="helper-text">
-            {locale === 'en-US'
-              ? 'Separate drafting, review, and delivery so the workspace stays readable.'
-              : '把创作、审阅和交付分开，工作台会更清晰。'}
-          </p>
-        </div>
-        <div className="segmented-control">
-          {[
-            { id: 'source', label: copy.sourceTab },
-            { id: 'analysis', label: labels.analysisTab },
-            { id: 'outline', label: labels.outlineTab },
-            { id: 'script', label: labels.scriptTab },
-            { id: 'storyboard', label: copy.storyboardTab },
-            { id: 'exports', label: copy.exportsTab },
-            { id: 'jobs', label: copy.jobsTab },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              className={`segment ${activeTab === tab.id ? 'active' : ''}`}
-              onClick={() => setActiveTab(tab.id as WorkspaceTab)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="workspace-stage-band">
+      <section className="workspace-stage-band workspace-preview-band">
         <div className="workspace-stage-copy">
           <span className="eyebrow">
             {locale === 'en-US' ? 'Active lane' : '当前工作区'}
@@ -673,6 +756,7 @@ export function ProjectWorkspaceClient({
         </div>
       </section>
 
+      <div className="workspace-preview-shell">
       {activeTab === 'source' ? (
         <section className="workspace-grid workspace-detail-grid">
           <SourceEditorPanel
@@ -717,7 +801,7 @@ export function ProjectWorkspaceClient({
                 </div>
                 <div>
                   <strong>{labels.genre}</strong>
-                  <span>{genre}</span>
+                  <span>{getGenreDisplayLabel(locale, genre)}</span>
                 </div>
                 <div>
                   <strong>{labels.episodeCount}</strong>
@@ -989,8 +1073,18 @@ export function ProjectWorkspaceClient({
           />
         </section>
       ) : null}
+      </div>
     </div>
   );
+}
+
+function getGenreDisplayLabel(locale: SupportedLocale, genre: string) {
+  if (!GENRE_VALUES.includes(genre as (typeof GENRE_VALUES)[number])) {
+    return genre;
+  }
+
+  const labels = locale === 'en-US' ? GENRE_LABELS_EN : GENRE_LABELS;
+  return labels[genre as (typeof GENRE_VALUES)[number]];
 }
 
 function getWorkspaceSectionCopy(
@@ -1076,6 +1170,208 @@ function getWorkspaceSectionCopy(
         description: '重试、取消和追踪进度都应该和创作面板明确分层。',
       };
   }
+}
+
+function getWorkflowStageFromTab(activeTab: WorkspaceTab): WorkflowStageId {
+  switch (activeTab) {
+    case 'analysis':
+    case 'outline':
+    case 'script':
+      return 'script';
+    case 'storyboard':
+      return 'storyboard';
+    default:
+      return 'novel';
+  }
+}
+
+function getWorkflowSubtabs(
+  locale: SupportedLocale,
+  labels: ProjectWorkspaceClientProps['labels'],
+  stage: WorkflowStageId
+) {
+  switch (stage) {
+    case 'script':
+      return [
+        { id: 'analysis' as const, label: labels.analysisTab },
+        { id: 'outline' as const, label: labels.outlineTab },
+        { id: 'script' as const, label: labels.scriptTab },
+      ];
+    case 'storyboard':
+      return [
+        {
+          id: 'storyboard' as const,
+          label: locale === 'en-US' ? 'Storyboard Preview' : '分镜预览',
+        },
+      ];
+    default:
+      return [
+        {
+          id: 'source' as const,
+          label: locale === 'en-US' ? 'Novel Source' : '小说原文',
+        },
+      ];
+  }
+}
+
+function buildWorkflowStages(
+  locale: SupportedLocale,
+  input: {
+    pipelineStages: ReturnType<typeof deriveProjectPipelineStages>;
+    sourceText: string;
+    scriptArtifacts: GenerationArtifact[];
+    storyboardArtifacts: GenerationArtifact[];
+    jobs: GenerationJob[];
+  }
+) {
+  const sourceStage = input.pipelineStages.find((stage) => stage.id === 'source');
+  const analysisStage = input.pipelineStages.find((stage) => stage.id === 'analysis');
+  const outlineStage = input.pipelineStages.find((stage) => stage.id === 'outline');
+  const scriptStage = input.pipelineStages.find((stage) => stage.id === 'script');
+  const storyboardStage = input.pipelineStages.find((stage) => stage.id === 'storyboard');
+  const scriptStatuses = [analysisStage?.status, outlineStage?.status, scriptStage?.status].filter(
+    (status): status is PipelineStageStatus => Boolean(status)
+  );
+  const completedScriptSteps = scriptStatuses.filter((status) => status === 'succeeded').length;
+
+  return [
+    {
+      id: 'novel' as const,
+      index: locale === 'en-US' ? '01' : '一',
+      title: locale === 'en-US' ? 'Novel' : '小说',
+      description:
+        locale === 'en-US'
+          ? 'Upload the original text, set genre and pacing, and prepare the source material for generation.'
+          : '上传原文、设置题材与节奏，把小说素材整理成后续生成的稳定起点。',
+      primaryTab: 'source' as const,
+      progress: sourceStage?.status === 'succeeded' ? 100 : input.sourceText.trim() ? 72 : 16,
+      tone: 'novel' as const,
+      statusTone: getStatusTone(sourceStage?.status ?? 'pending'),
+      statusLabel: getStatusLabel(locale, sourceStage?.status ?? 'pending'),
+      meta:
+        locale === 'en-US'
+          ? `${input.sourceText.trim().length.toLocaleString()} chars`
+          : `${input.sourceText.trim().length.toLocaleString()} 字`,
+      stats: [
+        { label: locale === 'en-US' ? 'source' : '原文', value: input.sourceText.trim() ? '1' : '0' },
+        { label: locale === 'en-US' ? 'jobs' : '任务', value: String(input.jobs.length) },
+      ],
+    },
+    {
+      id: 'script' as const,
+      index: locale === 'en-US' ? '02' : '二',
+      title: locale === 'en-US' ? 'Script' : '剧本',
+      description:
+        locale === 'en-US'
+          ? 'Bundle analysis, outline, and drafting into one readable middle lane.'
+          : '把分析、大纲和剧本收拢到同一个中段工作区里，阅读和修改都会更顺。',
+      primaryTab: 'script' as const,
+      progress: Math.round((completedScriptSteps / Math.max(scriptStatuses.length, 1)) * 100),
+      tone: 'script' as const,
+      statusTone: getAggregateStatusTone(scriptStatuses),
+      statusLabel: getAggregateStatusLabel(locale, scriptStatuses),
+      meta:
+        locale === 'en-US'
+          ? `${input.scriptArtifacts.length} script versions`
+          : `${input.scriptArtifacts.length} 个剧本版本`,
+      stats: [
+        { label: locale === 'en-US' ? 'analysis' : '分析', value: analysisStage?.status === 'succeeded' ? '1' : '0' },
+        { label: locale === 'en-US' ? 'outline' : '大纲', value: outlineStage?.status === 'succeeded' ? '1' : '0' },
+        { label: locale === 'en-US' ? 'scripts' : '剧本', value: String(input.scriptArtifacts.length) },
+      ],
+    },
+    {
+      id: 'storyboard' as const,
+      index: locale === 'en-US' ? '03' : '三',
+      title: locale === 'en-US' ? 'Storyboard' : '分镜',
+      description:
+        locale === 'en-US'
+          ? 'Inspect visual outputs, prompts, and linked assets in a cinematic preview lane.'
+          : '把视觉结果、提示词和相关资产放进更像成片预览的审阅区里。',
+      primaryTab: 'storyboard' as const,
+      progress:
+        storyboardStage?.status === 'succeeded'
+          ? 100
+          : input.storyboardArtifacts.length > 0
+            ? 84
+            : 12,
+      tone: 'storyboard' as const,
+      statusTone: getStatusTone(storyboardStage?.status ?? 'pending'),
+      statusLabel: getStatusLabel(locale, storyboardStage?.status ?? 'pending'),
+      meta:
+        locale === 'en-US'
+          ? `${input.storyboardArtifacts.length} storyboard sets`
+          : `${input.storyboardArtifacts.length} 组分镜`,
+      stats: [
+        { label: locale === 'en-US' ? 'boards' : '分镜', value: String(input.storyboardArtifacts.length) },
+        {
+          label: locale === 'en-US' ? 'status' : '状态',
+          value:
+            storyboardStage?.status === 'succeeded'
+              ? locale === 'en-US'
+                ? 'done'
+                : '完成'
+              : locale === 'en-US'
+                ? 'pending'
+                : '待开始',
+        },
+      ],
+    },
+  ];
+}
+
+function getStatusTone(status: string) {
+  if (status === 'failed') {
+    return 'danger';
+  }
+  if (status === 'running' || status === 'queued') {
+    return 'running';
+  }
+  if (status === 'succeeded') {
+    return 'success';
+  }
+  return 'muted';
+}
+
+function getStatusLabel(locale: SupportedLocale, status: string) {
+  switch (status) {
+    case 'succeeded':
+      return locale === 'en-US' ? 'Ready' : '已就绪';
+    case 'running':
+      return locale === 'en-US' ? 'Running' : '进行中';
+    case 'queued':
+      return locale === 'en-US' ? 'Queued' : '排队中';
+    case 'failed':
+      return locale === 'en-US' ? 'Failed' : '失败';
+    default:
+      return locale === 'en-US' ? 'Pending' : '待开始';
+  }
+}
+
+function getAggregateStatusTone(statuses: string[]) {
+  if (statuses.some((status) => status === 'failed')) {
+    return 'danger';
+  }
+  if (statuses.some((status) => status === 'running' || status === 'queued')) {
+    return 'running';
+  }
+  if (statuses.length > 0 && statuses.every((status) => status === 'succeeded')) {
+    return 'success';
+  }
+  return 'muted';
+}
+
+function getAggregateStatusLabel(locale: SupportedLocale, statuses: string[]) {
+  if (statuses.some((status) => status === 'failed')) {
+    return locale === 'en-US' ? 'Needs review' : '需要检查';
+  }
+  if (statuses.some((status) => status === 'running' || status === 'queued')) {
+    return locale === 'en-US' ? 'Generating' : '生成中';
+  }
+  if (statuses.length > 0 && statuses.every((status) => status === 'succeeded')) {
+    return locale === 'en-US' ? 'Ready' : '已完成';
+  }
+  return locale === 'en-US' ? 'Drafting' : '整理中';
 }
 
 function getWorkspaceStagePills(

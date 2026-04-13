@@ -31,9 +31,13 @@ export interface ArtifactLineage {
 
 const KIND_ORDER: GenerationArtifactKind[] = [
   'analysis',
+  'story_bible',
+  'scene_cards',
   'outline',
   'script',
   'storyboard',
+  'shot_plan',
+  'prompt_pack',
   'export',
   'prompt',
 ];

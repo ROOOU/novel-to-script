@@ -21,6 +21,8 @@ import {
 } from '@/server/shared/platform';
 import { createSSEStreamResponse } from '@/server/shared/sse';
 import { scriptGenerationPayloadSchema } from '@/app/api/projects/[projectId]/jobs/schema';
+import { buildStoryChunks } from '@/server/story-engine/chunking';
+import { evaluateStoryComplexity } from '@/server/story-engine/complexity';
 
 export async function POST(request: NextRequest) {
   const rateLimit = checkRateLimit(request, { scope: 'generate' });
@@ -46,6 +48,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = validation.data as ScriptGenerationRequest;
+    const complexityInfo = body.complexityInfo ?? evaluateStoryComplexity(body.text);
+    const executionMode = body.executionMode ?? complexityInfo.recommendedExecutionMode;
+    const storyChunks = buildStoryChunks(body.text, complexityInfo);
+    const generationMode = body.mode ?? (executionMode === 'segmented' ? 'longform' : 'quick');
+    const targetOutput = body.targetOutput ?? 'script';
     const runtime = getPlatformRuntime();
     const runtimeWorkspaceId = resolveRuntimeWorkspaceId(platformContext.workspaceId);
     const usageSnapshot = await runtime.usageMeter.snapshot(runtimeWorkspaceId);
@@ -105,6 +112,32 @@ export async function POST(request: NextRequest) {
         episodeCount: body.config.episodeCount,
         episodeDuration: body.config.episodeDuration,
         style: body.config.style,
+        generationMode,
+        targetOutput,
+        executionMode,
+        complexityInfo,
+        chunkPlan: {
+          chunkCount: storyChunks.length,
+          chunks: storyChunks.map((chunk) => ({
+            chunkId: chunk.chunkId,
+            charCount: chunk.charCount,
+          })),
+        },
+        metadata: {
+          generationMode,
+          targetOutput,
+          executionMode,
+          complexityInfo,
+          chunkPlan: {
+            strategy: executionMode === 'segmented' ? 'segmented' : 'single',
+            chunkCount: storyChunks.length,
+            chunks: storyChunks.map((chunk) => ({
+              chunkId: chunk.chunkId,
+              index: chunk.index,
+              charCount: chunk.charCount,
+            })),
+          },
+        },
       },
     });
     await runtime.generationJobs.markRunning(job.id, undefined, platformContext.userId);
@@ -114,7 +147,13 @@ export async function POST(request: NextRequest) {
       async (send) => {
         try {
           await runScriptGeneration({
-            body,
+            body: {
+              ...body,
+              complexityInfo,
+              executionMode,
+              mode: generationMode,
+              targetOutput,
+            },
             context: platformContext,
             jobId: job.id,
             send,

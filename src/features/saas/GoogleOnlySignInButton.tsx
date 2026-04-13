@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useSignIn } from '@clerk/nextjs';
+import { useEffect, useState } from 'react';
+import { useAuth, useSignIn } from '@clerk/nextjs';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 interface GoogleOnlySignInButtonProps {
@@ -18,12 +18,32 @@ export function GoogleOnlySignInButton({
   hint,
 }: GoogleOnlySignInButtonProps) {
   const { signIn, fetchStatus } = useSignIn();
+  const { isLoaded: authLoaded, userId } = useAuth();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const ready = Boolean(signIn) && fetchStatus === 'idle';
 
+  useEffect(() => {
+    if (!authLoaded || !userId) {
+      return;
+    }
+
+    setPending(true);
+    redirectToCallback(callbackPath);
+  }, [authLoaded, callbackPath, userId]);
+
   async function handleGoogleSignIn() {
-    if (!ready || pending) {
+    if (pending) {
+      return;
+    }
+
+    if (authLoaded && userId) {
+      setPending(true);
+      redirectToCallback(callbackPath);
+      return;
+    }
+
+    if (!ready) {
       return;
     }
 
@@ -35,10 +55,11 @@ export function GoogleOnlySignInButton({
         redirectUrl: callbackPath,
         redirectCallbackUrl: `/${locale}/sso-callback`,
       });
+      setPending(false);
     } catch (error) {
       const code = resolveClerkErrorCode(error);
       if (code === 'session_exists') {
-        window.location.assign(callbackPath);
+        redirectToCallback(callbackPath);
         return;
       }
       setError(locale === 'en-US' ? 'Google sign-in failed. Please try again.' : 'Google 登录失败，请重试。');
@@ -64,6 +85,14 @@ export function GoogleOnlySignInButton({
       {error ? <p className="error-message">{error}</p> : null}
     </div>
   );
+}
+
+function redirectToCallback(callbackPath: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.location.replace(callbackPath);
 }
 
 function resolveClerkErrorCode(error: unknown): string | null {

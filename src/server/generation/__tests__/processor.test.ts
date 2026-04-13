@@ -186,6 +186,10 @@ describe('processPersistedGenerationJob', () => {
         }),
       })
     );
+    const downstreamCreateArg = createJob.mock.calls[0]?.[0];
+    expect(downstreamCreateArg).toBeTruthy();
+    expect((downstreamCreateArg as { inputSnapshot: { metadata: Record<string, unknown> } }).inputSnapshot.metadata)
+      .not.toHaveProperty('executionMode');
     expect(scheduler.schedule).toHaveBeenCalledWith('job_storyboard');
     expect(mocks.captureJobCredits).toHaveBeenCalledWith(
       expect.objectContaining({

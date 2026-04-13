@@ -1,18 +1,34 @@
 import { z } from 'zod';
+import { GENRE_VALUES, SCRIPT_STYLE_VALUES } from '@/lib/types';
 
 export const generateConfigSchema = z.object({
-  genre: z.enum(['xianxia', 'urban', 'fantasy']),
+  genre: z.enum(GENRE_VALUES),
   episodeCount: z.number().int().positive(),
   episodeDuration: z.enum(['1:00-1:30', '1:30-2:00', '2:00-3:00']),
-  style: z.enum(['dramatic', 'comedic', 'suspense']),
+  style: z.enum(SCRIPT_STYLE_VALUES),
   includeDirectorNotes: z.boolean().optional(),
 });
 
 export const scriptGenerationPayloadSchema = z.object({
   text: z.string().min(1),
-  genre: z.enum(['xianxia', 'urban', 'fantasy']),
+  genre: z.enum(GENRE_VALUES),
   config: generateConfigSchema,
   analysis: z.record(z.string(), z.unknown()).optional(),
+  mode: z.enum(['quick', 'longform']).optional(),
+  targetOutput: z.enum(['script', 'prompt_pack', 'full_pipeline']).optional(),
+  executionMode: z.enum(['direct', 'segmented']).optional(),
+  complexityInfo: z
+    .object({
+      score: z.number(),
+      textLength: z.number().int().nonnegative(),
+      estimatedSceneBreaks: z.number().int().nonnegative(),
+      estimatedTimeJumps: z.number().int().nonnegative(),
+      estimatedPovSwitches: z.number().int().nonnegative(),
+      estimatedCharacterDensity: z.number().int().nonnegative(),
+      recommendedExecutionMode: z.enum(['direct', 'segmented']),
+      chunkCount: z.number().int().positive(),
+    })
+    .optional(),
 });
 
 const storyboardGenerationPayloadSchema = z
@@ -31,6 +47,7 @@ const storyboardGenerationPayloadSchema = z
     colorTone: z.string().optional(),
     genreLabel: z.string().optional(),
     safeMode: z.boolean().optional(),
+    targetPlatform: z.enum(['generic-video', 'seedance']).optional(),
   })
   .superRefine((value, ctx) => {
     const hasScriptText = (value.scriptText?.trim().length ?? 0) > 0;

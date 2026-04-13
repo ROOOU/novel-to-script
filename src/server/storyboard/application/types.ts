@@ -4,7 +4,6 @@ import type {
   StoryboardGenerationEvent,
 } from '@/features/storyboard/contracts';
 import type { PlatformRequestContext, PlatformUsageEvent, UsageMeter } from '@/server/shared/platform';
-import type { StoryboardMetadata } from '@/server/shared/platform';
 import type { SSESender } from '@/server/shared/sse';
 
 export interface StoryboardGenerationExecutionOptions {
@@ -25,11 +24,11 @@ export interface StoryboardGenerationProgressUpdate {
 }
 
 export interface StoryboardGenerationArtifactRecord {
-  kind: 'storyboard';
+  kind: 'storyboard' | 'shot_plan' | 'prompt_pack';
   title: string;
-  format: 'text/plain';
+  format: 'text/plain' | 'application/json';
   content: string;
-  metadata?: StoryboardMetadata;
+  metadata?: Record<string, unknown>;
 }
 
 export function buildStoryboardUsageEvent(

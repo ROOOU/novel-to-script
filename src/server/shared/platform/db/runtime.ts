@@ -325,12 +325,28 @@ function createProjectRepository(db: ReturnType<typeof getDatabaseClient>): Proj
     },
     async listByWorkspaceId(workspaceId) {
       return selectMany<Project>(
-        db.select({ data: projectsTable.data }).from(projectsTable).where(eq(projectsTable.workspaceId, workspaceId))
+        db
+          .select({ data: projectsTable.data })
+          .from(projectsTable)
+          .where(
+            and(
+              eq(projectsTable.workspaceId, workspaceId),
+              eq(projectsTable.status, 'active')
+            )
+          )
       );
     },
     async listByOrganizationId(organizationId) {
       return selectMany<Project>(
-        db.select({ data: projectsTable.data }).from(projectsTable).where(eq(projectsTable.organizationId, organizationId))
+        db
+          .select({ data: projectsTable.data })
+          .from(projectsTable)
+          .where(
+            and(
+              eq(projectsTable.organizationId, organizationId),
+              eq(projectsTable.status, 'active')
+            )
+          )
       );
     },
     async findBySourceDocumentId(sourceDocumentId) {

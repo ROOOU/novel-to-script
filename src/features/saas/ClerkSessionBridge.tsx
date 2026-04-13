@@ -45,24 +45,11 @@ export function ClerkSessionBridge({ locale, redirectUrl }: ClerkSessionBridgePr
     let active = true;
 
     async function bridgeSession() {
-      const immediateResponse = await postBridgeRequest(locale);
-      if (!active) {
-        return;
-      }
+      let lastErrorCode: string | undefined;
 
-      if (immediateResponse.ok) {
-        navigateToNextPath(nextPath, router);
-        return;
-      }
-
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        await wait(250);
-        const clerkToken = await getToken();
-        if (!clerkToken) {
-          continue;
-        }
-
-        const response = await postBridgeRequest(locale, clerkToken);
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const clerkToken = await getToken().catch(() => null);
+        const response = await postBridgeRequest(locale, clerkToken ?? undefined);
         if (!active) {
           return;
         }
@@ -72,13 +59,18 @@ export function ClerkSessionBridge({ locale, redirectUrl }: ClerkSessionBridgePr
           return;
         }
 
+        lastErrorCode = response.payload?.error;
         if (response.status !== 401 || response.payload?.error !== 'UNAUTHORIZED') {
           setError(resolveBridgeError(locale, response.payload?.error));
           return;
         }
+
+        if (attempt < 2) {
+          await wait(150);
+        }
       }
 
-      setError(resolveBridgeError(locale, immediateResponse.payload?.error ?? 'UNAUTHORIZED'));
+      setError(resolveBridgeError(locale, lastErrorCode ?? 'UNAUTHORIZED'));
     }
 
     bridgeSession().catch(() => {
@@ -135,10 +127,12 @@ async function postBridgeRequest(locale: SupportedLocale, clerkToken?: string): 
 }
 
 function navigateToNextPath(nextPath: string, router: ReturnType<typeof useRouter>) {
-  router.replace(nextPath);
   if (typeof window !== 'undefined') {
     window.location.replace(nextPath);
+    return;
   }
+
+  router.replace(nextPath);
 }
 
 function wait(ms: number): Promise<void> {

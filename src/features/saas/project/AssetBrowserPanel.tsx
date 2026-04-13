@@ -14,6 +14,14 @@ import {
   formatLocaleDateTime,
 } from '@/features/saas/project/presentation';
 import { deriveArtifactLineage } from '@/features/saas/project/artifact-lineage';
+import {
+  formatAnalysisStrategyLabel,
+  formatExecutionBehaviorSummary,
+  formatExecutionModeLabel,
+  formatOutlineStrategyLabel,
+  formatScriptStrategyLabel,
+  readMergedScriptDiagnostics,
+} from '@/features/saas/project/job-diagnostics';
 
 type AssetFilterKind = 'all' | GenerationArtifact['kind'];
 type SortOrder = 'latest' | 'oldest';
@@ -31,9 +39,13 @@ interface AssetBrowserPanelProps {
   labels?: Partial<{
     all: string;
     analysis: string;
+    story_bible: string;
+    scene_cards: string;
     outline: string;
     script: string;
     storyboard: string;
+    shot_plan: string;
+    prompt_pack: string;
     export: string;
     prompt: string;
     searchPlaceholder: string;
@@ -51,14 +63,28 @@ interface AssetBrowserPanelProps {
     contentEmpty: string;
     sourceFallback: string;
     productionChain: string;
+    executionDiagnostics: string;
+    diagnosticsExecutionMode: string;
+    diagnosticsChunkCount: string;
+    diagnosticsAnalyzedChunks: string;
+    diagnosticsOutlinedChunks: string;
+    diagnosticsAnalysisStrategy: string;
+    diagnosticsOutlineStrategy: string;
+    diagnosticsScriptStrategy: string;
+    diagnosticsSourceChunk: string;
+    diagnosticsComplexity: string;
   }>;
 }
 
 const KIND_ORDER: GenerationArtifact['kind'][] = [
   'analysis',
+  'story_bible',
+  'scene_cards',
   'outline',
   'script',
   'storyboard',
+  'shot_plan',
+  'prompt_pack',
   'export',
   'prompt',
 ];
@@ -81,13 +107,18 @@ export function AssetBrowserPanel({
   const [searchValue, setSearchValue] = useState(initialSearch);
   const [manualSelectedArtifactId, setManualSelectedArtifactId] = useState<string | null>(null);
   const [isDownloadingFiltered, setIsDownloadingFiltered] = useState(false);
+  const [isOutlineCollapsed, setIsOutlineCollapsed] = useState(false);
 
   const kindLabels: Record<AssetFilterKind, string> = {
     all: mergedLabels.all,
     analysis: mergedLabels.analysis,
+    story_bible: mergedLabels.story_bible,
+    scene_cards: mergedLabels.scene_cards,
     outline: mergedLabels.outline,
     script: mergedLabels.script,
     storyboard: mergedLabels.storyboard,
+    shot_plan: mergedLabels.shot_plan,
+    prompt_pack: mergedLabels.prompt_pack,
     export: mergedLabels.export,
     prompt: mergedLabels.prompt,
   };
@@ -136,15 +167,44 @@ export function AssetBrowserPanel({
   );
   const selectedUpstreamArtifacts = selectedLineage?.directUpstream ?? [];
   const selectedDownstreamArtifacts = selectedLineage?.directDownstream ?? [];
+  const selectedScriptDiagnostics = useMemo(() => {
+    if (!selectedArtifact) {
+      return null;
+    }
+
+    const upstreamArtifacts = [
+      ...selectedUpstreamArtifacts,
+      ...(selectedLineage?.upstream ?? []),
+    ]
+      .map((entry) => entry.artifact)
+      .filter((artifact): artifact is GenerationArtifact => Boolean(artifact));
+
+    const diagnosticsArtifacts = dedupeArtifactsById([
+      selectedArtifact,
+      ...upstreamArtifacts,
+    ]).filter((artifact) =>
+      artifact.kind === 'analysis' || artifact.kind === 'outline' || artifact.kind === 'script'
+    );
+
+    return readMergedScriptDiagnostics(diagnosticsArtifacts.map((artifact) => artifact.metadata));
+  }, [selectedArtifact, selectedLineage?.upstream, selectedUpstreamArtifacts]);
   const productionChain = selectedLineage?.stageCounts ?? [
     { kind: 'analysis' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'analysis').length },
+    { kind: 'story_bible' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'story_bible').length },
+    { kind: 'scene_cards' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'scene_cards').length },
     { kind: 'outline' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'outline').length },
     { kind: 'script' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'script').length },
     { kind: 'storyboard' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'storyboard').length },
+    { kind: 'shot_plan' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'shot_plan').length },
+    { kind: 'prompt_pack' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'prompt_pack').length },
   ];
   const chainPreview = selectedLineage?.chainArtifacts
     .map((artifact) => `${formatArtifactKind(locale, artifact.kind)} v${artifact.version}`)
     .join(' → ');
+  const selectedPreview = useMemo(
+    () => (selectedArtifact ? buildArtifactPreviewModel(selectedArtifact, locale) : null),
+    [locale, selectedArtifact]
+  );
 
   async function handleDownloadFiltered() {
     if (filteredArtifacts.length === 0 || isDownloadingFiltered) {
@@ -328,9 +388,102 @@ export function AssetBrowserPanel({
                     {formatJobStatus(locale, selectedJob?.status ?? 'pending')}
                   </span>
                 </div>
-                <pre className="artifact-preview">
-                  {selectedArtifact.content?.trim() || mergedLabels.contentEmpty}
-                </pre>
+                {selectedPreview ? (
+                  <>
+                    <div className="artifact-reading-strip">
+                      {selectedPreview.stats.map((stat) => (
+                        <div key={stat.label} className="artifact-reading-stat">
+                          <span>{stat.label}</span>
+                          <strong>{stat.value}</strong>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="artifact-reader-layout">
+                      {selectedPreview.mode === 'reader' && selectedPreview.sections.length > 1 ? (
+                        <nav className="artifact-reader-outline" aria-label="Artifact outline">
+                          <div className="artifact-reader-outline-toolbar">
+                            <p className="artifact-reader-outline-label">
+                              {locale === 'en-US' ? 'Quick navigation' : '快速导航'}
+                            </p>
+                            <div className="artifact-reader-outline-actions">
+                              <button
+                                type="button"
+                                className="artifact-reader-outline-button"
+                                onClick={() => setIsOutlineCollapsed((current) => !current)}
+                              >
+                                {isOutlineCollapsed
+                                  ? locale === 'en-US'
+                                    ? 'Show'
+                                    : '展开'
+                                  : locale === 'en-US'
+                                    ? 'Hide'
+                                    : '收起'}
+                              </button>
+                              <a
+                                className="artifact-reader-outline-button"
+                                href={`#${selectedPreview.sections[0]?.id ?? ''}`}
+                              >
+                                {locale === 'en-US' ? 'Start' : '开头'}
+                              </a>
+                              <a
+                                className="artifact-reader-outline-button"
+                                href={`#${selectedPreview.sections[selectedPreview.sections.length - 1]?.id ?? ''}`}
+                              >
+                                {locale === 'en-US' ? 'Latest' : '最新段'}
+                              </a>
+                            </div>
+                          </div>
+                          {!isOutlineCollapsed ? (
+                            <div className="artifact-reader-outline-list">
+                              {selectedPreview.sections.map((section) => (
+                                <a key={section.id} className="artifact-reader-outline-link" href={`#${section.id}`}>
+                                  <span>{section.title}</span>
+                                  <small>{section.meta}</small>
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                        </nav>
+                      ) : null}
+
+                      <div className="artifact-reader-body">
+                        {selectedPreview.mode === 'reader' ? (
+                          <article className="artifact-reader-article">
+                            {selectedPreview.sections.map((section) => (
+                              <section key={section.id} id={section.id} className="artifact-reader-section">
+                                <div className="artifact-reader-section-head">
+                                  <h4>{section.title}</h4>
+                                  <span>{section.meta}</span>
+                                </div>
+                                <div className="artifact-reader-section-body">
+                                  {section.paragraphs.map((paragraph, index) => (
+                                    <div
+                                      key={`${section.id}-${index}`}
+                                      className={`artifact-reader-line artifact-reader-line-${classifyArtifactLine(
+                                        paragraph
+                                      )}`}
+                                    >
+                                      {renderArtifactParagraph(paragraph)}
+                                    </div>
+                                  ))}
+                                </div>
+                              </section>
+                            ))}
+                          </article>
+                        ) : (
+                          <pre className="artifact-preview artifact-preview-code">
+                            {selectedArtifact.content?.trim() || mergedLabels.contentEmpty}
+                          </pre>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <pre className="artifact-preview">
+                    {selectedArtifact.content?.trim() || mergedLabels.contentEmpty}
+                  </pre>
+                )}
               </div>
 
               <div className="artifact-detail-grid">
@@ -355,6 +508,50 @@ export function AssetBrowserPanel({
                   <strong>{shortenId(selectedArtifact.generationJobId)}</strong>
                 </div>
               </div>
+
+              {selectedScriptDiagnostics ? (
+                <section className="artifact-source-panel">
+                  <div className="list-row">
+                    <strong>{mergedLabels.executionDiagnostics}</strong>
+                    <span
+                      className={`status-pill status-pill-${
+                        selectedScriptDiagnostics.executionMode === 'segmented' ? 'running' : 'success'
+                      }`}
+                    >
+                      {formatExecutionModeLabel(locale, selectedScriptDiagnostics.executionMode)}
+                    </span>
+                  </div>
+                  <p className="helper-text">
+                    {formatExecutionBehaviorSummary(locale, selectedScriptDiagnostics)}
+                  </p>
+                  <p className="helper-text">
+                    {[
+                      `${mergedLabels.diagnosticsExecutionMode} ${formatExecutionModeLabel(locale, selectedScriptDiagnostics.executionMode)}`,
+                      `${mergedLabels.diagnosticsChunkCount} ${selectedScriptDiagnostics.chunkCount}`,
+                      selectedScriptDiagnostics.analyzedChunkCount > 0
+                        ? `${mergedLabels.diagnosticsAnalyzedChunks} ${selectedScriptDiagnostics.analyzedChunkCount}`
+                        : null,
+                      selectedScriptDiagnostics.outlinedChunkCount > 0
+                        ? `${mergedLabels.diagnosticsOutlinedChunks} ${selectedScriptDiagnostics.outlinedChunkCount}`
+                        : null,
+                      selectedScriptDiagnostics.analysisStrategy
+                        ? `${mergedLabels.diagnosticsAnalysisStrategy} ${formatAnalysisStrategyLabel(locale, selectedScriptDiagnostics.analysisStrategy)}`
+                        : null,
+                      selectedScriptDiagnostics.outlineStrategy
+                        ? `${mergedLabels.diagnosticsOutlineStrategy} ${formatOutlineStrategyLabel(locale, selectedScriptDiagnostics.outlineStrategy)}`
+                        : null,
+                      selectedScriptDiagnostics.scriptStrategy
+                        ? `${mergedLabels.diagnosticsScriptStrategy} ${formatScriptStrategyLabel(locale, selectedScriptDiagnostics.scriptStrategy)}`
+                        : null,
+                      selectedScriptDiagnostics.sourceChunkIndex !== null
+                        ? `${mergedLabels.diagnosticsSourceChunk} ${selectedScriptDiagnostics.sourceChunkIndex}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                </section>
+              ) : null}
 
               <section className="artifact-source-panel">
                 <div className="list-row">
@@ -491,6 +688,10 @@ export function AssetBrowserPanel({
   );
 }
 
+function dedupeArtifactsById(artifacts: GenerationArtifact[]) {
+  return Array.from(new Map(artifacts.map((artifact) => [artifact.id, artifact])).values());
+}
+
 function getJobTone(status?: GenerationJob['status']) {
   switch (status) {
     case 'succeeded':
@@ -515,6 +716,171 @@ function excerpt(value: string) {
   return `${normalized.slice(0, 180)}…`;
 }
 
+interface ArtifactPreviewModel {
+  mode: 'reader' | 'code';
+  stats: Array<{ label: string; value: string }>;
+  sections: Array<{
+    id: string;
+    title: string;
+    meta: string;
+    paragraphs: string[];
+  }>;
+}
+
+function buildArtifactPreviewModel(
+  artifact: GenerationArtifact,
+  locale: SupportedLocale
+): ArtifactPreviewModel | null {
+  const content = artifact.content?.trim();
+  if (!content) {
+    return null;
+  }
+
+  const paragraphBlocks = splitArtifactContentIntoBlocks(content);
+  const totalLines = content.split('\n').filter((line) => line.trim().length > 0).length;
+  const stats = [
+    {
+      label: locale === 'en-US' ? 'Length' : '字数',
+      value: locale === 'en-US' ? `${content.length} chars` : `${content.length} 字`,
+    },
+    {
+      label: locale === 'en-US' ? 'Blocks' : '段落',
+      value: String(paragraphBlocks.length),
+    },
+    {
+      label: locale === 'en-US' ? 'Read' : '阅读',
+      value:
+        locale === 'en-US'
+          ? `${Math.max(1, Math.round(content.length / 900))} min`
+          : `${Math.max(1, Math.round(content.length / 450))} 分钟`,
+    },
+  ];
+
+  if (artifact.format === 'application/json' || artifact.kind === 'shot_plan' || artifact.kind === 'prompt_pack') {
+    return {
+      mode: 'code',
+      stats: [
+        ...stats,
+        {
+          label: locale === 'en-US' ? 'Lines' : '行数',
+          value: String(totalLines),
+        },
+      ],
+      sections: [],
+    };
+  }
+
+  const sections = paragraphBlocks.map((block, index) => {
+    const lines = block
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const firstLine = lines[0] ?? '';
+    const isHeadingLike = /^(第.+集|场景[:：]|分镜[①②③④⑤⑥⑦⑧⑨⑩\d]+|人物[:：]|#)/.test(firstLine);
+    const title = isHeadingLike
+      ? firstLine
+      : artifact.kind === 'script'
+        ? locale === 'en-US'
+          ? `Script block ${index + 1}`
+          : `剧本片段 ${index + 1}`
+        : locale === 'en-US'
+          ? `Section ${index + 1}`
+          : `段落 ${index + 1}`;
+    const bodyLines = isHeadingLike ? lines.slice(1) : lines;
+    const paragraphs = (bodyLines.length > 0 ? bodyLines : [block]).map((line) => line.trim()).filter(Boolean);
+
+    return {
+      id: `artifact-section-${index + 1}`,
+      title,
+      meta:
+        locale === 'en-US'
+          ? `${paragraphs.length} lines`
+          : `${paragraphs.length} 行`,
+      paragraphs,
+    };
+  });
+
+  return {
+    mode: 'reader',
+    stats: [
+      ...stats,
+      {
+        label: locale === 'en-US' ? 'Sections' : '章节',
+        value: String(sections.length),
+      },
+    ],
+    sections,
+  };
+}
+
+function splitArtifactContentIntoBlocks(content: string): string[] {
+  const lines = content
+    .split('\n')
+    .map((line) => line.replace(/\s+$/g, ''));
+
+  const blocks: string[] = [];
+  let buffer: string[] = [];
+
+  const flush = () => {
+    const block = buffer.join('\n').trim();
+    if (block) {
+      blocks.push(block);
+    }
+    buffer = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flush();
+      continue;
+    }
+
+    if (buffer.length > 0 && isArtifactHeadingLine(trimmed)) {
+      flush();
+    }
+
+    buffer.push(trimmed);
+  }
+
+  flush();
+  return blocks;
+}
+
+function isArtifactHeadingLine(line: string): boolean {
+  return /^(第.+集|场景[:：]|分镜[①②③④⑤⑥⑦⑧⑨⑩\d]+|镜头\d+|人物[:：]|#|INT\.|EXT\.)/.test(line);
+}
+
+function classifyArtifactLine(line: string) {
+  if (/^(第.+集|场景[:：]|分镜[①②③④⑤⑥⑦⑧⑨⑩\d]+|镜头\d+|INT\.|EXT\.)/.test(line)) {
+    return 'heading';
+  }
+
+  if (/^[^：:\s]{1,8}[：:]/.test(line)) {
+    return 'dialogue';
+  }
+
+  if (/^[（(【[]/.test(line) || /(转场|切至|镜头|运镜|特写|中景|近景)/.test(line)) {
+    return 'stage';
+  }
+
+  return 'body';
+}
+
+function renderArtifactParagraph(paragraph: string) {
+  const dialogueMatch = paragraph.match(/^([^：:\s]{1,8})[：:]\s*(.+)$/);
+  if (dialogueMatch) {
+    return (
+      <>
+        <span className="artifact-inline-speaker">{dialogueMatch[1]}</span>
+        <span className="artifact-inline-dialogue">{dialogueMatch[2]}</span>
+      </>
+    );
+  }
+
+  return paragraph;
+}
+
 function shortenId(value: string) {
   if (value.length <= 12) {
     return value;
@@ -528,9 +894,13 @@ function getDefaultLabels(locale: SupportedLocale) {
     return {
       all: 'All',
       analysis: 'Analysis',
+      story_bible: 'Story Bible',
+      scene_cards: 'Scene Cards',
       outline: 'Outline',
       script: 'Script',
       storyboard: 'Storyboard',
+      shot_plan: 'Shot Plan',
+      prompt_pack: 'Prompt Pack',
       export: 'Export',
       prompt: 'Prompt',
       searchPlaceholder: 'Search by title or content',
@@ -548,15 +918,29 @@ function getDefaultLabels(locale: SupportedLocale) {
       contentEmpty: 'No content available.',
       sourceFallback: 'No linked artifacts available.',
       productionChain: 'Production chain',
+      executionDiagnostics: 'Execution diagnostics',
+      diagnosticsExecutionMode: 'Execution',
+      diagnosticsChunkCount: 'Chunks',
+      diagnosticsAnalyzedChunks: 'Analyzed chunks',
+      diagnosticsOutlinedChunks: 'Outlined chunks',
+      diagnosticsAnalysisStrategy: 'Analysis',
+      diagnosticsOutlineStrategy: 'Outline',
+      diagnosticsScriptStrategy: 'Script',
+      diagnosticsSourceChunk: 'Source chunk',
+      diagnosticsComplexity: 'Complexity',
     };
   }
 
   return {
     all: '全部',
     analysis: '分析',
+    story_bible: '故事圣经',
+    scene_cards: '场景卡',
     outline: '大纲',
     script: '剧本',
     storyboard: '分镜',
+    shot_plan: '镜头计划',
+    prompt_pack: '提示词包',
     export: '导出',
     prompt: '提示词',
     searchPlaceholder: '按标题或内容搜索',
@@ -574,6 +958,16 @@ function getDefaultLabels(locale: SupportedLocale) {
     contentEmpty: '当前没有可展示内容。',
     sourceFallback: '暂无可展示的关联产物。',
     productionChain: '生产链路',
+    executionDiagnostics: '执行诊断',
+    diagnosticsExecutionMode: '执行模式',
+    diagnosticsChunkCount: '分段数量',
+    diagnosticsAnalyzedChunks: '分析分段',
+    diagnosticsOutlinedChunks: '大纲分段',
+    diagnosticsAnalysisStrategy: '分析策略',
+    diagnosticsOutlineStrategy: '大纲策略',
+    diagnosticsScriptStrategy: '剧本策略',
+    diagnosticsSourceChunk: '来源分段',
+    diagnosticsComplexity: '复杂度',
   };
 }
 

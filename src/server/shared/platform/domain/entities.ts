@@ -43,9 +43,13 @@ export type GenerationJobBillingState =
   | 'released';
 export type GenerationArtifactKind =
   | 'analysis'
+  | 'story_bible'
+  | 'scene_cards'
   | 'outline'
   | 'script'
   | 'storyboard'
+  | 'shot_plan'
+  | 'prompt_pack'
   | 'export'
   | 'prompt';
 export type GenerationArtifactFormat =
@@ -203,6 +207,71 @@ export interface StoryboardShot {
   lighting: string;
   audioHint: string;
   videoPrompt: string;
+}
+
+export interface StoryBibleCharacterState {
+  name: string;
+  description: string;
+  personality: string;
+  speechStyle: string;
+  relationships: string[];
+}
+
+export interface StoryBibleLocationState {
+  name: string;
+  description: string;
+  relatedCharacters?: string[];
+}
+
+export interface StoryBiblePropState {
+  name: string;
+  significance: string;
+}
+
+export interface StoryBibleTimelineEvent {
+  id: string;
+  title: string;
+  summary: string;
+}
+
+export interface StoryBible {
+  projectSummary: string;
+  genre: string;
+  themes: string[];
+  toneGuide: string[];
+  characters: StoryBibleCharacterState[];
+  locations: StoryBibleLocationState[];
+  props: StoryBiblePropState[];
+  timeline: StoryBibleTimelineEvent[];
+  worldRules: string[];
+  unresolvedThreads: string[];
+}
+
+export interface SceneCard {
+  sceneId: string;
+  title: string;
+  summary: string;
+  characters: string[];
+  location: string;
+  time: string;
+  goal: string;
+  conflict: string;
+  turningPoint: string;
+  visualBeats: string[];
+  continuityIn?: string[];
+  continuityOut?: string[];
+}
+
+export type PromptPackTargetPlatform = 'generic-video' | 'seedance';
+
+export interface PromptPackEntry {
+  shotId: string;
+  targetPlatform: PromptPackTargetPlatform;
+  mainPrompt: string;
+  negativePrompt?: string;
+  styleHints?: string[];
+  safetyNotes?: string[];
+  copyReadyText: string;
 }
 
 export interface StoryboardMetadata extends Record<string, unknown> {

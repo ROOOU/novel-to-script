@@ -1,7 +1,7 @@
 import { after, NextResponse } from 'next/server';
 import { resolveStaleGenerationRecoveryWindowMs } from '@/lib/llm-config';
 import { viewerOwnsProject } from '@/server/auth/viewer-access';
-import { getProjectBundle } from '@/server/projects/service';
+import { archiveProject, getProjectBundle } from '@/server/projects/service';
 import { requireViewerResponse } from '@/server/auth/http';
 import { processPersistedGenerationJob } from '@/server/generation/service';
 import { getPlatformRuntime } from '@/server/shared/platform';
@@ -59,6 +59,42 @@ export async function GET(
     ok: true,
     ...bundle,
   });
+}
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: Promise<{ projectId: string }> }
+) {
+  const { viewer, response } = await requireViewerResponse();
+  if (response || !viewer) {
+    return response;
+  }
+
+  const { projectId } = await params;
+
+  try {
+    const project = await archiveProject({
+      projectId,
+      organizationId: viewer.organization.id,
+      workspaceId: viewer.workspace.id,
+      userId: viewer.user.id,
+    });
+
+    return NextResponse.json({
+      ok: true,
+      project,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'PROJECT_DELETE_FAILED';
+    const status = message === 'PROJECT_NOT_FOUND' ? 404 : 400;
+    return NextResponse.json(
+      {
+        ok: false,
+        error: message,
+      },
+      { status }
+    );
+  }
 }
 
 function findRecoverableStaleJob(

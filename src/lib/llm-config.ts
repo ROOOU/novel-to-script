@@ -8,6 +8,7 @@ const STALE_GENERATION_RECOVERY_BUFFER_MS = 30_000;
 const VERSION_PATH_RE = /\/v\d+$/;
 const KNOWN_ENDPOINT_SUFFIX_RE = /\/(?:chat\/completions|responses|completions|embeddings|audio\/transcriptions)$/;
 const KNOWN_GATEWAY_ROOT_SUFFIX_RE = /\/v\d+\/endpoints$/;
+const KNOWN_OPENAI_COMPATIBLE_ROOT_RE = /\/v\d+(?:beta)?\/openai$/;
 const LLM_FALLBACK_ENV_KEYS = ['LLM_FALLBACKS', 'LLM_FALLBACKS_JSON'] as const;
 
 export interface LLMFallbackConfig {
@@ -31,6 +32,10 @@ function normalizeBasePath(pathname: string): string {
   }
 
   if (KNOWN_GATEWAY_ROOT_SUFFIX_RE.test(withoutEndpoint)) {
+    return withoutEndpoint;
+  }
+
+  if (KNOWN_OPENAI_COMPATIBLE_ROOT_RE.test(withoutEndpoint)) {
     return withoutEndpoint;
   }
 

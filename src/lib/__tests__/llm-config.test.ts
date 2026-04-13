@@ -21,6 +21,8 @@ describe('normalizeLLMBaseUrl', () => {
   it('keeps versioned api root urls unchanged', () => {
     expect(normalizeLLMBaseUrl('https://api.openai.com/v1')).toBe('https://api.openai.com/v1');
     expect(normalizeLLMBaseUrl('https://openrouter.ai/api/v1/')).toBe('https://openrouter.ai/api/v1');
+    expect(normalizeLLMBaseUrl('https://generativelanguage.googleapis.com/v1beta/openai'))
+      .toBe('https://generativelanguage.googleapis.com/v1beta/openai');
     expect(normalizeLLMBaseUrl('https://wanqing.streamlakeapi.com/api/gateway/v1/endpoints'))
       .toBe('https://wanqing.streamlakeapi.com/api/gateway/v1/endpoints');
   });

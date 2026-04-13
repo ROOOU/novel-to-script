@@ -1,9 +1,18 @@
+import type { PromptPackTargetPlatform, StoryBible, SceneCard } from '@/server/shared/platform/domain';
+
 export interface StoryboardGenerateRequest {
   scriptText?: string;
   visualStyle?: string;
   colorTone?: string;
   genreLabel?: string;
   safeMode?: boolean;
+  storyBible?: StoryBible;
+  sceneCards?: SceneCard[];
+  outputMode?: 'prompt_only' | 'structured_shots' | 'full';
+  targetPlatform?: PromptPackTargetPlatform;
+  characterRefs?: Array<{ id: string; label: string }>;
+  locationRefs?: Array<{ id: string; label: string }>;
+  continuityHints?: string[];
 }
 
 export type StoryboardGenerationScope = 'all' | 'selection';
@@ -26,6 +35,7 @@ export interface StoryboardGenerationEvent {
     | 'parsing'
     | 'parsed'
     | 'generating'
+    | 'safety_retry'
     | 'content_policy_blocked'
     | 'streaming'
     | 'done'

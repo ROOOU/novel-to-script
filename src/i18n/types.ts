@@ -75,6 +75,13 @@ export interface Dictionary {
     description: string;
     genre: string;
     lastUpdated: string;
+    openWorkspace: string;
+    openingWorkspace: string;
+    deleteLabel: string;
+    deletingLabel: string;
+    deleteConfirmTitle: string;
+    deleteConfirmBody: string;
+    deleteError: string;
   };
   projectDetail: {
     sourceTitle: string;

@@ -254,11 +254,21 @@ function createProjectRepository(): ProjectRepository {
     },
     async listByWorkspaceId(workspaceId) {
       const store = await readPlatformStore();
-      return store.projects.filter((project) => project.workspaceId === workspaceId);
+      return store.projects.filter(
+        (project) =>
+          project.workspaceId === workspaceId &&
+          project.status !== 'archived' &&
+          !project.archivedAt
+      );
     },
     async listByOrganizationId(organizationId) {
       const store = await readPlatformStore();
-      return store.projects.filter((project) => project.organizationId === organizationId);
+      return store.projects.filter(
+        (project) =>
+          project.organizationId === organizationId &&
+          project.status !== 'archived' &&
+          !project.archivedAt
+      );
     },
     async findBySourceDocumentId(sourceDocumentId) {
       const store = await readPlatformStore();

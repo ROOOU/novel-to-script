@@ -1,6 +1,14 @@
 'use client';
 
 import { useRef } from 'react';
+import {
+  GENRE_LABELS,
+  GENRE_LABELS_EN,
+  GENRE_VALUES,
+  SCRIPT_STYLE_LABELS,
+  SCRIPT_STYLE_LABELS_EN,
+  SCRIPT_STYLE_VALUES,
+} from '@/lib/types';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 interface SourceEditorPanelProps {
@@ -72,6 +80,8 @@ export function SourceEditorPanel({
 }: SourceEditorPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const disableEditorActions = saving || uploading;
+  const genreLabels = locale === 'en-US' ? GENRE_LABELS_EN : GENRE_LABELS;
+  const styleLabels = locale === 'en-US' ? SCRIPT_STYLE_LABELS_EN : SCRIPT_STYLE_LABELS;
 
   return (
     <article className="card stack-gap">
@@ -117,9 +127,11 @@ export function SourceEditorPanel({
         <label className="field">
           <span>{labels.genre}</span>
           <select value={genre} onChange={(event) => onGenreChange(event.target.value)}>
-            <option value="urban">{locale === 'en-US' ? 'Urban romance' : '都市情感'}</option>
-            <option value="xianxia">{locale === 'en-US' ? 'Xianxia' : '仙侠'}</option>
-            <option value="fantasy">{locale === 'en-US' ? 'Fantasy adventure' : '奇幻冒险'}</option>
+            {GENRE_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {genreLabels[value]}
+              </option>
+            ))}
           </select>
         </label>
         <label className="field">
@@ -137,9 +149,11 @@ export function SourceEditorPanel({
         <label className="field">
           <span>{labels.style}</span>
           <select value={style} onChange={(event) => onStyleChange(event.target.value)}>
-            <option value="dramatic">{locale === 'en-US' ? 'Dramatic' : '戏剧化'}</option>
-            <option value="comedic">{locale === 'en-US' ? 'Comedic' : '轻喜剧'}</option>
-            <option value="suspense">{locale === 'en-US' ? 'Suspense' : '悬疑'}</option>
+            {SCRIPT_STYLE_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {styleLabels[value]}
+              </option>
+            ))}
           </select>
         </label>
       </div>

@@ -67,12 +67,20 @@ export function formatArtifactKind(
   switch (kind) {
     case 'analysis':
       return locale === 'en-US' ? 'Analysis' : '分析';
+    case 'story_bible':
+      return locale === 'en-US' ? 'Story Bible' : '故事圣经';
+    case 'scene_cards':
+      return locale === 'en-US' ? 'Scene Cards' : '场景卡';
     case 'outline':
       return locale === 'en-US' ? 'Outline' : '大纲';
     case 'script':
       return locale === 'en-US' ? 'Script' : '剧本';
     case 'storyboard':
       return locale === 'en-US' ? 'Storyboard' : '分镜';
+    case 'shot_plan':
+      return locale === 'en-US' ? 'Shot Plan' : '镜头计划';
+    case 'prompt_pack':
+      return locale === 'en-US' ? 'Prompt Pack' : '提示词包';
     case 'export':
       return locale === 'en-US' ? 'Export' : '导出';
     case 'prompt':

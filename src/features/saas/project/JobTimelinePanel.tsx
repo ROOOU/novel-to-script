@@ -19,6 +19,14 @@ import {
   formatJobStatus,
   formatLocaleDateTime,
 } from '@/features/saas/project/presentation';
+import {
+  formatAnalysisStrategyLabel,
+  formatExecutionBehaviorSummary,
+  formatExecutionModeLabel,
+  formatOutlineStrategyLabel,
+  formatScriptStrategyLabel,
+  readMergedScriptDiagnostics,
+} from '@/features/saas/project/job-diagnostics';
 
 interface JobTimelinePanelProps {
   locale: SupportedLocale;
@@ -51,32 +59,21 @@ interface JobTimelinePanelProps {
     diagnosticsParseError: string;
     diagnosticsRecoveredShots: string;
     diagnosticsShotCount: string;
+    scriptDiagnostics: string;
+    scriptDiagnosticsDirect: string;
+    scriptDiagnosticsSegmented: string;
+    scriptDiagnosticsFallback: string;
+    scriptDiagnosticsReused: string;
+    scriptDiagnosticsChunkCount: string;
+    scriptDiagnosticsAnalyzedChunkCount: string;
+    scriptDiagnosticsOutlinedChunkCount: string;
+    scriptDiagnosticsComplexity: string;
+    scriptDiagnosticsOutlineFallback: string;
+    scriptDiagnosticsSegmentedScript: string;
+    scriptDiagnosticsSingleScript: string;
+    scriptDiagnosticsSourceChunk: string;
   }>;
 }
-
-const DEFAULT_LABELS = {
-  emptyState: 'No jobs yet.',
-  stageSummary: 'Stage summary',
-  stagePlaceholder: 'Pipeline summary pending.',
-  startedAt: 'Started',
-  finishedAt: 'Finished',
-  progress: 'Progress',
-  reservedCredits: 'Reserved',
-  settledCredits: 'Settled',
-  jobId: 'Job',
-  retry: 'Retry',
-  retrying: 'Retrying...',
-  cancel: 'Cancel',
-  cancelling: 'Cancelling...',
-  inputSnapshot: 'Input snapshot',
-  diagnostics: 'Storyboard diagnostics',
-  diagnosticsStructured: 'Structured JSON',
-  diagnosticsTextDerived: 'Text-derived fallback',
-  diagnosticsPartialTextDerived: 'Partial text-derived fallback',
-  diagnosticsParseError: 'Parse signal',
-  diagnosticsRecoveredShots: 'Recovered shots',
-  diagnosticsShotCount: 'Shot count',
-};
 
 export function JobTimelinePanel({
   locale,
@@ -89,7 +86,7 @@ export function JobTimelinePanel({
   onCancelJob,
   labels,
 }: JobTimelinePanelProps) {
-  const mergedLabels = { ...DEFAULT_LABELS, ...labels };
+  const mergedLabels = { ...getDefaultLabels(locale), ...labels };
   const orderedJobs = [...jobs].sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   const hasPipeline = Boolean(pipelineStages?.length);
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
@@ -155,6 +152,7 @@ export function JobTimelinePanel({
             const summary = job.outputSummary?.trim() || mergedLabels.stagePlaceholder;
             const pipelineStagesForJob = deriveJobPipelineStages(job, jobs);
             const failureSummary = summarizeJobFailure(locale, job);
+            const scriptDiagnostics = readJobScriptDiagnostics(job, jobs, artifacts);
             const storyboardArtifact = findLatestArtifactForJob(artifacts, job.id, 'storyboard');
             const storyboardDiagnostics = readStoryboardDiagnostics(storyboardArtifact?.metadata);
             const canRetry = job.status === 'failed' || job.status === 'cancelled';
@@ -192,6 +190,61 @@ export function JobTimelinePanel({
                     <strong>{mergedLabels.stageSummary}</strong>
                     <p>{summary}</p>
                   </div>
+
+                  {scriptDiagnostics ? (
+                    <div className="source-job-card">
+                      <div className="list-row">
+                        <strong>{mergedLabels.scriptDiagnostics}</strong>
+                        <span
+                          className={`status-pill status-pill-${
+                            scriptDiagnostics.executionMode === 'segmented' ? 'running' : 'success'
+                          }`}
+                        >
+                          {formatExecutionModeLabel(locale, scriptDiagnostics.executionMode)}
+                        </span>
+                      </div>
+                      <p className="helper-text">
+                        {formatExecutionBehaviorSummary(locale, scriptDiagnostics)}
+                      </p>
+                      <p className="helper-text">
+                        {[
+                          `${mergedLabels.scriptDiagnosticsChunkCount} ${scriptDiagnostics.chunkCount}`,
+                          `${mergedLabels.scriptDiagnosticsAnalyzedChunkCount} ${scriptDiagnostics.analyzedChunkCount}`,
+                          scriptDiagnostics.outlinedChunkCount > 0
+                            ? `${mergedLabels.scriptDiagnosticsOutlinedChunkCount} ${scriptDiagnostics.outlinedChunkCount}`
+                            : null,
+                          scriptDiagnostics.analysisStrategy === 'segmented_fallback_single'
+                            ? mergedLabels.scriptDiagnosticsFallback
+                            : null,
+                          scriptDiagnostics.outlineStrategy === 'segmented_fallback_single'
+                            ? mergedLabels.scriptDiagnosticsOutlineFallback
+                            : null,
+                          scriptDiagnostics.analysisStrategy === 'reused'
+                            ? mergedLabels.scriptDiagnosticsReused
+                            : null,
+                          scriptDiagnostics.scriptStrategy === 'segmented'
+                            ? mergedLabels.scriptDiagnosticsSegmentedScript
+                            : scriptDiagnostics.scriptStrategy === 'single'
+                              ? mergedLabels.scriptDiagnosticsSingleScript
+                              : null,
+                          scriptDiagnostics.analysisStrategy
+                            ? `${locale === 'en-US' ? 'Analysis' : '分析'} ${formatAnalysisStrategyLabel(locale, scriptDiagnostics.analysisStrategy)}`
+                            : null,
+                          scriptDiagnostics.outlineStrategy
+                            ? `${locale === 'en-US' ? 'Outline' : '大纲'} ${formatOutlineStrategyLabel(locale, scriptDiagnostics.outlineStrategy)}`
+                            : null,
+                          scriptDiagnostics.scriptStrategy
+                            ? `${locale === 'en-US' ? 'Script' : '剧本'} ${formatScriptStrategyLabel(locale, scriptDiagnostics.scriptStrategy)}`
+                            : null,
+                          scriptDiagnostics.sourceChunkIndex !== null
+                            ? `${mergedLabels.scriptDiagnosticsSourceChunk} ${scriptDiagnostics.sourceChunkIndex}`
+                            : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    </div>
+                  ) : null}
 
                   {storyboardDiagnostics ? (
                     <div className="source-job-card">
@@ -314,6 +367,84 @@ export function JobTimelinePanel({
   );
 }
 
+function getDefaultLabels(locale: SupportedLocale) {
+  if (locale === 'en-US') {
+    return {
+      emptyState: 'No jobs yet.',
+      stageSummary: 'Stage summary',
+      stagePlaceholder: 'Pipeline summary pending.',
+      startedAt: 'Started',
+      finishedAt: 'Finished',
+      progress: 'Progress',
+      reservedCredits: 'Reserved',
+      settledCredits: 'Settled',
+      jobId: 'Job',
+      retry: 'Retry',
+      retrying: 'Retrying...',
+      cancel: 'Cancel',
+      cancelling: 'Cancelling...',
+      inputSnapshot: 'Input snapshot',
+      diagnostics: 'Storyboard diagnostics',
+      diagnosticsStructured: 'Structured JSON',
+      diagnosticsTextDerived: 'Text-derived fallback',
+      diagnosticsPartialTextDerived: 'Partial text-derived fallback',
+      diagnosticsParseError: 'Parse signal',
+      diagnosticsRecoveredShots: 'Recovered shots',
+      diagnosticsShotCount: 'Shot count',
+      scriptDiagnostics: 'Script diagnostics',
+      scriptDiagnosticsDirect: 'Direct execution',
+      scriptDiagnosticsSegmented: 'Segmented execution',
+      scriptDiagnosticsFallback: 'Fallback to single-pass analysis',
+      scriptDiagnosticsReused: 'Reused analysis',
+      scriptDiagnosticsChunkCount: 'Chunks',
+      scriptDiagnosticsAnalyzedChunkCount: 'Analyzed chunks',
+      scriptDiagnosticsOutlinedChunkCount: 'Outlined chunks',
+      scriptDiagnosticsComplexity: 'Complexity',
+      scriptDiagnosticsOutlineFallback: 'Fallback to single-pass outline',
+      scriptDiagnosticsSegmentedScript: 'Segmented script',
+      scriptDiagnosticsSingleScript: 'Single-pass script',
+      scriptDiagnosticsSourceChunk: 'Source chunk',
+    };
+  }
+
+  return {
+    emptyState: '还没有任务。',
+    stageSummary: '阶段摘要',
+    stagePlaceholder: '任务链路摘要待生成。',
+    startedAt: '开始时间',
+    finishedAt: '完成时间',
+    progress: '进度',
+    reservedCredits: '预留积分',
+    settledCredits: '结算积分',
+    jobId: '任务',
+    retry: '重试',
+    retrying: '正在重试...',
+    cancel: '取消',
+    cancelling: '正在取消...',
+    inputSnapshot: '输入快照',
+    diagnostics: '分镜诊断',
+    diagnosticsStructured: '结构化 JSON',
+    diagnosticsTextDerived: '文本兜底',
+    diagnosticsPartialTextDerived: '局部文本补位',
+    diagnosticsParseError: '解析信号',
+    diagnosticsRecoveredShots: '补位镜头',
+    diagnosticsShotCount: '镜头数量',
+    scriptDiagnostics: '脚本诊断',
+    scriptDiagnosticsDirect: '直接执行',
+    scriptDiagnosticsSegmented: '分段执行',
+    scriptDiagnosticsFallback: '已回退到单次分析',
+    scriptDiagnosticsReused: '复用已有分析',
+    scriptDiagnosticsChunkCount: '分块数量',
+    scriptDiagnosticsAnalyzedChunkCount: '已分析分块',
+    scriptDiagnosticsOutlinedChunkCount: '已生成大纲分块',
+    scriptDiagnosticsComplexity: '复杂度',
+    scriptDiagnosticsOutlineFallback: '已回退到单次大纲',
+    scriptDiagnosticsSegmentedScript: '分段剧本',
+    scriptDiagnosticsSingleScript: '单次剧本',
+    scriptDiagnosticsSourceChunk: '来源分块',
+  };
+}
+
 function getJobStatusTone(status: GenerationJob['status']) {
   switch (status) {
     case 'succeeded':
@@ -355,6 +486,37 @@ function findLatestArtifactForJob(
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.version - left.version)[0] ?? null;
 }
 
+function readJobScriptDiagnostics(
+  job: GenerationJob,
+  jobs: GenerationJob[],
+  artifacts: GenerationArtifact[]
+) {
+  const upstreamJobId = readUpstreamJobId(job.inputSnapshot);
+  const relevantJobIds = upstreamJobId ? [job.id, upstreamJobId] : [job.id];
+  const diagnosticsArtifacts = relevantJobIds.flatMap((jobId) =>
+    ['analysis', 'outline', 'script'].flatMap((kind) => {
+      const artifact = findLatestArtifactForJob(artifacts, jobId, kind as GenerationArtifact['kind']);
+      return artifact ? [artifact] : [];
+    })
+  );
+
+  if (upstreamJobId && !jobs.some((entry) => entry.id === upstreamJobId)) {
+    return readMergedScriptDiagnostics(diagnosticsArtifacts.map((artifact) => artifact.metadata));
+  }
+
+  return readMergedScriptDiagnostics(diagnosticsArtifacts.map((artifact) => artifact.metadata));
+}
+
+function readUpstreamJobId(snapshot: Record<string, unknown>) {
+  const metadata =
+    snapshot.metadata && typeof snapshot.metadata === 'object'
+      ? (snapshot.metadata as Record<string, unknown>)
+      : null;
+  return typeof metadata?.upstreamJobId === 'string' && metadata.upstreamJobId.trim().length > 0
+    ? metadata.upstreamJobId.trim()
+    : null;
+}
+
 function readStoryboardDiagnostics(metadata: GenerationArtifact['metadata'] | undefined) {
   if (!metadata || typeof metadata !== 'object') {
     return null;
@@ -386,7 +548,7 @@ function readStoryboardDiagnostics(metadata: GenerationArtifact['metadata'] | un
 }
 
 function formatFallbackModeLabel(
-  labels: typeof DEFAULT_LABELS & NonNullable<JobTimelinePanelProps['labels']>,
+  labels: ReturnType<typeof getDefaultLabels> & NonNullable<JobTimelinePanelProps['labels']>,
   mode: 'text-derived' | 'partial-text-derived'
 ) {
   return mode === 'partial-text-derived'

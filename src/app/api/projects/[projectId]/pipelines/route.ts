@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { GENRE_VALUES, SCRIPT_STYLE_VALUES } from '@/lib/types';
 import { requireViewerResponse } from '@/server/auth/http';
 import { viewerOwnsProject } from '@/server/auth/viewer-access';
 import { createNovelToStoryboardPipeline } from '@/server/generation/pipeline-service';
+import { evaluateStoryComplexity } from '@/server/story-engine/complexity';
 import { getPlatformRuntime } from '@/server/shared/platform';
 
 export const maxDuration = 300;
@@ -11,18 +13,18 @@ const pipelineSchema = z.object({
   mode: z.literal('novel-to-storyboard'),
   payload: z.object({
     text: z.string().min(1),
-    genre: z.enum(['urban', 'xianxia', 'fantasy']),
+    genre: z.enum(GENRE_VALUES),
     config: z.object({
-      genre: z.enum(['urban', 'xianxia', 'fantasy']),
+      genre: z.enum(GENRE_VALUES),
       episodeCount: z.number().int().min(1).max(20),
       episodeDuration: z.enum(['1:00-1:30', '1:30-2:00', '2:00-3:00']),
-      style: z.enum(['dramatic', 'comedic', 'suspense']),
+      style: z.enum(SCRIPT_STYLE_VALUES),
       includeDirectorNotes: z.boolean(),
     }),
     analysis: z
       .object({
         title: z.string(),
-        genre: z.enum(['urban', 'xianxia', 'fantasy']),
+        genre: z.enum(GENRE_VALUES),
         characters: z.array(
           z.object({
             name: z.string(),
@@ -38,12 +40,16 @@ const pipelineSchema = z.object({
         emotionalBeats: z.array(z.string()),
       })
       .optional(),
+    mode: z.enum(['quick', 'longform']).optional(),
+    targetOutput: z.enum(['script', 'prompt_pack', 'full_pipeline']).optional(),
+    executionMode: z.enum(['direct', 'segmented']).optional(),
     storyboardConfig: z
       .object({
         visualStyle: z.string().optional(),
         colorTone: z.string().optional(),
         genreLabel: z.string().optional(),
         safeMode: z.boolean().optional(),
+        targetPlatform: z.enum(['generic-video', 'seedance']).optional(),
       })
       .optional(),
   }),
@@ -73,12 +79,18 @@ export async function POST(
 
   try {
     const body = pipelineSchema.parse(await request.json());
+    const complexityInfo = evaluateStoryComplexity(body.payload.text);
+    const executionMode = body.payload.executionMode ?? complexityInfo.recommendedExecutionMode;
     const pipeline = await createNovelToStoryboardPipeline({
       organizationId: viewer.organization.id,
       workspaceId: viewer.workspace.id,
       projectId,
       userId: viewer.user.id,
-      body: body.payload,
+      body: {
+        ...body.payload,
+        complexityInfo,
+        executionMode,
+      },
     });
 
     return NextResponse.json({

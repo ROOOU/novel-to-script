@@ -15,6 +15,14 @@ import {
   formatLocaleDateTime,
 } from '@/features/saas/project/presentation';
 import { deriveArtifactLineage } from '@/features/saas/project/artifact-lineage';
+import {
+  formatAnalysisStrategyLabel,
+  formatExecutionBehaviorSummary,
+  formatExecutionModeLabel,
+  formatOutlineStrategyLabel,
+  formatScriptStrategyLabel,
+  readMergedScriptDiagnostics,
+} from '@/features/saas/project/job-diagnostics';
 
 interface StoryboardPanelProps {
   locale: SupportedLocale;
@@ -66,6 +74,16 @@ interface StoryboardPanelProps {
     diagnostics: string;
     diagnosticsSummary: string;
     diagnosticsFallbackMode: string;
+    executionDiagnostics: string;
+    diagnosticsExecutionMode: string;
+    diagnosticsChunkCount: string;
+    diagnosticsAnalyzedChunks: string;
+    diagnosticsOutlinedChunks: string;
+    diagnosticsAnalysisStrategy: string;
+    diagnosticsOutlineStrategy: string;
+    diagnosticsScriptStrategy: string;
+    diagnosticsSourceChunk: string;
+    diagnosticsComplexity: string;
     diagnosticsStructured: string;
     diagnosticsTextDerived: string;
     diagnosticsPartialTextDerived: string;
@@ -144,6 +162,22 @@ export function StoryboardPanel({
   const selectedInvalidShotIndexes = readNumberArray(selectedMetadata.invalidShotIndexes);
   const selectedInvalidShotErrors = readStringArray(selectedMetadata.invalidShotErrors);
   const selectedParseError = readOptionalString(selectedMetadata.parseError);
+  const selectedExecutionDiagnostics = useMemo(() => {
+    if (!selectedArtifact) {
+      return null;
+    }
+
+    const diagnosticsArtifacts = dedupeArtifactsById([
+      selectedArtifact,
+      ...(selectedLineage?.upstream ?? [])
+        .map((entry) => entry.artifact)
+        .filter((artifact): artifact is GenerationArtifact => Boolean(artifact)),
+    ]).filter((artifact) =>
+      artifact.kind === 'analysis' || artifact.kind === 'outline' || artifact.kind === 'script'
+    );
+
+    return readMergedScriptDiagnostics(diagnosticsArtifacts.map((artifact) => artifact.metadata));
+  }, [selectedArtifact, selectedLineage?.upstream]);
   const canShowShotView = Array.isArray(selectedMetadata.shots);
   const activePreviewMode = canShowShotView ? previewMode : 'text';
   const chainPreview = selectedLineage?.chainArtifacts
@@ -314,6 +348,52 @@ export function StoryboardPanel({
                   </pre>
                 )}
               </div>
+
+              <section className="artifact-source-panel">
+                {selectedExecutionDiagnostics ? (
+                  <>
+                    <div className="list-row">
+                      <strong>{mergedLabels.executionDiagnostics}</strong>
+                      <span
+                        className={`status-pill status-pill-${
+                          selectedExecutionDiagnostics.executionMode === 'segmented' ? 'running' : 'success'
+                        }`}
+                      >
+                        {formatExecutionModeLabel(locale, selectedExecutionDiagnostics.executionMode)}
+                      </span>
+                    </div>
+                    <p className="helper-text">
+                      {formatExecutionBehaviorSummary(locale, selectedExecutionDiagnostics)}
+                    </p>
+                    <p className="helper-text">
+                      {[
+                        `${mergedLabels.diagnosticsExecutionMode} ${formatExecutionModeLabel(locale, selectedExecutionDiagnostics.executionMode)}`,
+                        `${mergedLabels.diagnosticsChunkCount} ${selectedExecutionDiagnostics.chunkCount}`,
+                        selectedExecutionDiagnostics.analyzedChunkCount > 0
+                          ? `${mergedLabels.diagnosticsAnalyzedChunks} ${selectedExecutionDiagnostics.analyzedChunkCount}`
+                          : null,
+                        selectedExecutionDiagnostics.outlinedChunkCount > 0
+                          ? `${mergedLabels.diagnosticsOutlinedChunks} ${selectedExecutionDiagnostics.outlinedChunkCount}`
+                          : null,
+                        selectedExecutionDiagnostics.analysisStrategy
+                          ? `${mergedLabels.diagnosticsAnalysisStrategy} ${formatAnalysisStrategyLabel(locale, selectedExecutionDiagnostics.analysisStrategy)}`
+                          : null,
+                        selectedExecutionDiagnostics.outlineStrategy
+                          ? `${mergedLabels.diagnosticsOutlineStrategy} ${formatOutlineStrategyLabel(locale, selectedExecutionDiagnostics.outlineStrategy)}`
+                          : null,
+                        selectedExecutionDiagnostics.scriptStrategy
+                          ? `${mergedLabels.diagnosticsScriptStrategy} ${formatScriptStrategyLabel(locale, selectedExecutionDiagnostics.scriptStrategy)}`
+                          : null,
+                        selectedExecutionDiagnostics.sourceChunkIndex !== null
+                          ? `${mergedLabels.diagnosticsSourceChunk} ${selectedExecutionDiagnostics.sourceChunkIndex}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  </>
+                ) : null}
+              </section>
 
               <section className="artifact-source-panel">
                 <div className="list-row">
@@ -538,6 +618,16 @@ function getDefaultLabels(locale: SupportedLocale) {
       valueNotProvided: 'N/A',
       jumpToScript: 'Jump to script version',
       jumpToSource: 'Jump to source version',
+      executionDiagnostics: 'Execution diagnostics',
+      diagnosticsExecutionMode: 'Execution mode',
+      diagnosticsChunkCount: 'Chunks',
+      diagnosticsAnalyzedChunks: 'Analyzed chunks',
+      diagnosticsOutlinedChunks: 'Outlined chunks',
+      diagnosticsAnalysisStrategy: 'Analysis strategy',
+      diagnosticsOutlineStrategy: 'Outline strategy',
+      diagnosticsScriptStrategy: 'Script strategy',
+      diagnosticsSourceChunk: 'Source chunk',
+      diagnosticsComplexity: 'Complexity',
       diagnostics: 'Parse diagnostics',
       diagnosticsSummary: 'Structured JSON was incomplete, so the system filled the storyboard from text output.',
       diagnosticsFallbackMode: 'Parse mode',
@@ -588,6 +678,16 @@ function getDefaultLabels(locale: SupportedLocale) {
     valueNotProvided: '未提供',
     jumpToScript: '跳转到对应剧本版本',
     jumpToSource: '跳转到来源版本',
+    executionDiagnostics: '执行诊断',
+    diagnosticsExecutionMode: '执行模式',
+    diagnosticsChunkCount: '分块数量',
+    diagnosticsAnalyzedChunks: '已分析分块',
+    diagnosticsOutlinedChunks: '已生成大纲分块',
+    diagnosticsAnalysisStrategy: '分析策略',
+    diagnosticsOutlineStrategy: '大纲策略',
+    diagnosticsScriptStrategy: '剧本策略',
+    diagnosticsSourceChunk: '来源分块',
+    diagnosticsComplexity: '复杂度',
     diagnostics: '解析诊断',
     diagnosticsSummary: '结构化 JSON 没有完整命中，系统已根据文本结果补齐分镜内容。',
     diagnosticsFallbackMode: '解析模式',
@@ -732,4 +832,8 @@ function excerpt(value: string) {
   }
 
   return `${normalized.slice(0, 180)}…`;
+}
+
+function dedupeArtifactsById(artifacts: GenerationArtifact[]) {
+  return Array.from(new Map(artifacts.map((artifact) => [artifact.id, artifact])).values());
 }

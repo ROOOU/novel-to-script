@@ -17,7 +17,14 @@ import {
   splitLines,
 } from '@/lib/artifact-editors';
 import { summarizeVersionDiff } from '@/lib/version-summary';
-import type { Character, NovelAnalysis, OutlineEntry } from '@/lib/types';
+import {
+  GENRE_LABELS,
+  GENRE_LABELS_EN,
+  GENRE_VALUES,
+  type Character,
+  type NovelAnalysis,
+  type OutlineEntry,
+} from '@/lib/types';
 import {
   collectArtifactIdsFromMetadata,
   deriveArtifactLineage,
@@ -562,6 +569,8 @@ function AnalysisEditor({
   onChange: (draft: NovelAnalysis) => void;
   onRawChange: (value: string) => void;
 }) {
+  const genreLabels = locale === 'en-US' ? GENRE_LABELS_EN : GENRE_LABELS;
+
   return (
     <div className="stack-gap">
       <h3>{labels.analysisEditorTitle}</h3>
@@ -579,9 +588,11 @@ function AnalysisEditor({
         <label className="analysis-item field">
           <span className="analysis-item-label">{labels.analysisGenreField}</span>
           <select value={draft.genre} onChange={(event) => onChange({ ...draft, genre: event.target.value as NovelAnalysis['genre'] })}>
-            <option value="urban">{locale === 'en-US' ? 'Urban romance' : '都市情感'}</option>
-            <option value="xianxia">{locale === 'en-US' ? 'Xianxia' : '仙侠'}</option>
-            <option value="fantasy">{locale === 'en-US' ? 'Fantasy adventure' : '奇幻冒险'}</option>
+            {GENRE_VALUES.map((value) => (
+              <option key={value} value={value}>
+                {genreLabels[value]}
+              </option>
+            ))}
           </select>
         </label>
         <label className="analysis-item field" style={{ gridColumn: '1 / -1' }}>

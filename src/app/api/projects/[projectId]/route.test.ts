@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   requireViewerResponse: vi.fn(),
   getProjectBundle: vi.fn(),
+  archiveProject: vi.fn(),
 }));
 
 vi.mock('@/server/auth/http', () => ({
@@ -11,9 +12,10 @@ vi.mock('@/server/auth/http', () => ({
 
 vi.mock('@/server/projects/service', () => ({
   getProjectBundle: (...args: unknown[]) => mocks.getProjectBundle(...args),
+  archiveProject: (...args: unknown[]) => mocks.archiveProject(...args),
 }));
 
-import { GET } from '@/app/api/projects/[projectId]/route';
+import { DELETE, GET } from '@/app/api/projects/[projectId]/route';
 
 describe('project bundle route', () => {
   beforeEach(() => {
@@ -27,6 +29,10 @@ describe('project bundle route', () => {
       response: null,
     });
     mocks.getProjectBundle.mockResolvedValue(null);
+    mocks.archiveProject.mockResolvedValue({
+      id: 'proj_1',
+      status: 'archived',
+    });
   });
 
   it('rejects unauthenticated requests', async () => {
@@ -117,5 +123,44 @@ describe('project bundle route', () => {
       ],
     });
     expect(mocks.getProjectBundle).toHaveBeenCalledWith('proj_1');
+  });
+
+  it('archives a project for the active viewer', async () => {
+    const response = await DELETE(new Request('https://app.test/api/projects/proj_1', {
+      method: 'DELETE',
+    }), {
+      params: Promise.resolve({ projectId: 'proj_1' }),
+    });
+
+    expect(mocks.archiveProject).toHaveBeenCalledWith({
+      projectId: 'proj_1',
+      organizationId: 'org_1',
+      workspaceId: 'ws_1',
+      userId: 'user_1',
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      project: {
+        id: 'proj_1',
+        status: 'archived',
+      },
+    });
+  });
+
+  it('returns 404 when archive target is missing', async () => {
+    mocks.archiveProject.mockRejectedValueOnce(new Error('PROJECT_NOT_FOUND'));
+
+    const response = await DELETE(new Request('https://app.test/api/projects/proj_1', {
+      method: 'DELETE',
+    }), {
+      params: Promise.resolve({ projectId: 'proj_1' }),
+    });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: 'PROJECT_NOT_FOUND',
+    });
   });
 });

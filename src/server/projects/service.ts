@@ -83,7 +83,7 @@ export async function saveProjectSource(input: {
 export async function getProjectBundle(projectId: string) {
   const runtime = getPlatformRuntime();
   const project = await runtime.projects.getById(projectId);
-  if (!project) {
+  if (!project || project.status === 'archived' || project.archivedAt) {
     return null;
   }
 
@@ -102,6 +102,28 @@ export async function getProjectBundle(projectId: string) {
     artifactRelations: artifactRelations.sort((left: ArtifactRelation, right: ArtifactRelation) => right.createdAt.localeCompare(left.createdAt)),
     insights: buildProjectArtifactInsights(artifacts),
   };
+}
+
+export async function archiveProject(input: {
+  projectId: string;
+  organizationId: string;
+  workspaceId: string;
+  userId: string;
+}) {
+  const runtime = getPlatformRuntime();
+  const project = await runtime.projects.getById(input.projectId);
+  if (!project || project.status === 'archived' || project.archivedAt) {
+    throw new Error('PROJECT_NOT_FOUND');
+  }
+
+  if (
+    project.organizationId !== input.organizationId ||
+    project.workspaceId !== input.workspaceId
+  ) {
+    throw new Error('PROJECT_NOT_FOUND');
+  }
+
+  return runtime.projects.archive(project.id, input.userId);
 }
 
 async function createUniqueProjectSlug(workspaceId: string, name: string): Promise<string> {

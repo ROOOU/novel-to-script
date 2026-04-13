@@ -1,5 +1,6 @@
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
 import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
+import type { ComplexityInfo, GenerationMode, PipelineMode } from '@/lib/types';
 import { estimateJobCredits } from '@/server/billing/catalog';
 import { captureJobCredits, releaseJobCredits, reserveJobCredits } from '@/server/billing/service';
 import { runScriptGeneration } from '@/server/script-generation/application/run-script-generation';
@@ -16,6 +17,10 @@ interface PersistedGenerationJobSnapshot {
 
 interface NovelToStoryboardPipelineMetadata {
   pipelineMode: 'novel-to-storyboard';
+  generationMode?: GenerationMode;
+  executionMode?: PipelineMode;
+  complexityInfo?: ComplexityInfo;
+  chunkPlan?: Record<string, unknown>;
   storyboardPayload?: Partial<StoryboardGenerateRequestV2>;
 }
 
@@ -328,15 +333,56 @@ function buildScriptArtifactRelationInputs(
   createdArtifacts: GenerationArtifact[]
 ) {
   const analysisArtifact = createdArtifacts.find((artifact) => artifact.kind === 'analysis');
+  const storyBibleArtifact = createdArtifacts.find((artifact) => artifact.kind === 'story_bible');
   const outlineArtifact = createdArtifacts.find((artifact) => artifact.kind === 'outline');
+  const sceneCardsArtifact = createdArtifacts.find((artifact) => artifact.kind === 'scene_cards');
   const scriptArtifacts = createdArtifacts.filter((artifact) => artifact.kind === 'script');
   const relationInputs = [];
+
+  if (analysisArtifact && storyBibleArtifact) {
+    relationInputs.push({
+      projectId: job.projectId,
+      upstreamArtifactId: analysisArtifact.id,
+      downstreamArtifactId: storyBibleArtifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+      },
+      createdByUserId: job.requestedByUserId,
+    });
+  }
 
   if (analysisArtifact && outlineArtifact) {
     relationInputs.push({
       projectId: job.projectId,
       upstreamArtifactId: analysisArtifact.id,
       downstreamArtifactId: outlineArtifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+      },
+      createdByUserId: job.requestedByUserId,
+    });
+  }
+
+  if (storyBibleArtifact && sceneCardsArtifact) {
+    relationInputs.push({
+      projectId: job.projectId,
+      upstreamArtifactId: storyBibleArtifact.id,
+      downstreamArtifactId: sceneCardsArtifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+      },
+      createdByUserId: job.requestedByUserId,
+    });
+  }
+
+  if (outlineArtifact && sceneCardsArtifact) {
+    relationInputs.push({
+      projectId: job.projectId,
+      upstreamArtifactId: outlineArtifact.id,
+      downstreamArtifactId: sceneCardsArtifact.id,
       relationType: 'derived_from' as const,
       metadata: {
         generationJobId: job.id,
@@ -369,17 +415,20 @@ function buildStoryboardArtifactRelationInputs(
   createdArtifacts: GenerationArtifact[],
   payload?: StoryboardGenerateRequestV2
 ) {
-  const storyboardArtifacts = createdArtifacts.filter((artifact) => artifact.kind === 'storyboard');
-  if (storyboardArtifacts.length === 0) {
+  const sourceDrivenArtifacts = createdArtifacts.filter((artifact) =>
+    artifact.kind === 'storyboard' || artifact.kind === 'shot_plan' || artifact.kind === 'prompt_pack'
+  );
+  if (sourceDrivenArtifacts.length === 0) {
     return [];
   }
 
-  const sourceScriptArtifactIds = extractSourceScriptArtifactIds(storyboardArtifacts, payload);
+  const sourceScriptArtifactIds = extractSourceScriptArtifactIds(sourceDrivenArtifacts, payload);
   if (sourceScriptArtifactIds.length === 0) {
-    return [];
+    return buildStoryboardDerivedArtifactRelations(job, createdArtifacts);
   }
 
-  return storyboardArtifacts.flatMap((artifact) =>
+  return [
+    ...sourceDrivenArtifacts.flatMap((artifact) =>
     sourceScriptArtifactIds.map((upstreamArtifactId) => ({
       projectId: job.projectId,
       upstreamArtifactId,
@@ -390,7 +439,9 @@ function buildStoryboardArtifactRelationInputs(
       },
       createdByUserId: job.requestedByUserId,
     }))
-  );
+    ),
+    ...buildStoryboardDerivedArtifactRelations(job, createdArtifacts),
+  ];
 }
 
 function extractSourceScriptArtifactIds(
@@ -407,6 +458,44 @@ function extractSourceScriptArtifactIds(
       : [];
 
   return Array.from(new Set([...fromArtifacts, ...fromPayload]));
+}
+
+function buildStoryboardDerivedArtifactRelations(
+  job: NonNullable<Awaited<ReturnType<ReturnType<typeof getPlatformRuntime>['generationJobs']['getById']>>>,
+  createdArtifacts: GenerationArtifact[]
+) {
+  const storyboardArtifact = createdArtifacts.find((artifact) => artifact.kind === 'storyboard');
+  const shotPlanArtifact = createdArtifacts.find((artifact) => artifact.kind === 'shot_plan');
+  const promptPackArtifact = createdArtifacts.find((artifact) => artifact.kind === 'prompt_pack');
+  const relations = [];
+
+  if (storyboardArtifact && shotPlanArtifact) {
+    relations.push({
+      projectId: job.projectId,
+      upstreamArtifactId: storyboardArtifact.id,
+      downstreamArtifactId: shotPlanArtifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+      },
+      createdByUserId: job.requestedByUserId,
+    });
+  }
+
+  if (shotPlanArtifact && promptPackArtifact) {
+    relations.push({
+      projectId: job.projectId,
+      upstreamArtifactId: shotPlanArtifact.id,
+      downstreamArtifactId: promptPackArtifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+      },
+      createdByUserId: job.requestedByUserId,
+    });
+  }
+
+  return relations;
 }
 
 async function failAndRelease(jobId: string, errorMessage: string) {
@@ -461,6 +550,16 @@ function parseNovelToStoryboardPipelineMetadata(
 
   return {
     pipelineMode: 'novel-to-storyboard',
+    generationMode: metadata.generationMode === 'quick' || metadata.generationMode === 'longform'
+      ? metadata.generationMode
+      : undefined,
+    executionMode: metadata.executionMode === 'direct' || metadata.executionMode === 'segmented'
+      ? metadata.executionMode
+      : undefined,
+    complexityInfo: isRecord(metadata.complexityInfo)
+      ? (metadata.complexityInfo as unknown as ComplexityInfo)
+      : undefined,
+    chunkPlan: isRecord(metadata.chunkPlan) ? metadata.chunkPlan : undefined,
     storyboardPayload: isRecord(metadata.storyboardPayload)
       ? (metadata.storyboardPayload as Partial<StoryboardGenerateRequestV2>)
       : {},

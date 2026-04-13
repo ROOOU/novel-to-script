@@ -21,7 +21,7 @@ export interface ScriptGenerationProgressUpdate {
 }
 
 export interface ScriptGenerationArtifactRecord {
-  kind: 'analysis' | 'outline' | 'script';
+  kind: 'analysis' | 'story_bible' | 'scene_cards' | 'outline' | 'script';
   title: string;
   format: 'application/json' | 'text/plain';
   content: string;

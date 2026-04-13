@@ -51,7 +51,7 @@ describe('createNovelToStoryboardPipeline', () => {
       projectId: 'proj_1',
       userId: 'user_1',
       kind: 'script-generation',
-      body: {
+      body: expect.objectContaining({
         text: '原文内容',
         genre: 'urban',
         config: {
@@ -62,16 +62,32 @@ describe('createNovelToStoryboardPipeline', () => {
           includeDirectorNotes: true,
         },
         analysis: undefined,
-      },
-      metadata: {
+        mode: 'quick',
+        targetOutput: 'full_pipeline',
+        executionMode: expect.stringMatching(/direct|segmented/),
+        complexityInfo: expect.objectContaining({
+          recommendedExecutionMode: expect.stringMatching(/direct|segmented/),
+        }),
+      }),
+      metadata: expect.objectContaining({
         pipelineMode: 'novel-to-storyboard',
+        generationMode: 'quick',
+        executionMode: expect.stringMatching(/direct|segmented/),
+        complexityInfo: expect.objectContaining({
+          recommendedExecutionMode: expect.stringMatching(/direct|segmented/),
+        }),
+        chunkPlan: expect.objectContaining({
+          strategy: expect.stringMatching(/single|segmented/),
+          chunkCount: expect.any(Number),
+          chunks: expect.any(Array),
+        }),
         storyboardPayload: {
           visualStyle: 'cinematic',
           colorTone: 'warm',
           genreLabel: 'urban',
           safeMode: true,
         },
-      },
+      }),
     });
     expect(result).toEqual({
       mode: 'novel-to-storyboard',
@@ -108,10 +124,12 @@ describe('createNovelToStoryboardPipeline', () => {
 
     expect(mocks.createProjectGenerationJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        metadata: {
+        metadata: expect.objectContaining({
           pipelineMode: 'novel-to-storyboard',
+          generationMode: 'quick',
+          executionMode: expect.stringMatching(/direct|segmented/),
           storyboardPayload: {},
-        },
+        }),
       })
     );
   });

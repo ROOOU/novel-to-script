@@ -313,9 +313,66 @@ describe('legacy generate route', () => {
         workspaceId: 'ws_runtime',
         projectId: 'proj_runtime',
         kind: 'script-generation',
+        inputSnapshot: expect.objectContaining({
+          generationMode: 'quick',
+          targetOutput: 'script',
+          executionMode: expect.stringMatching(/direct|segmented/),
+          complexityInfo: expect.objectContaining({
+            recommendedExecutionMode: expect.stringMatching(/direct|segmented/),
+          }),
+          chunkPlan: expect.objectContaining({
+            chunkCount: expect.any(Number),
+            chunks: expect.any(Array),
+          }),
+          metadata: expect.objectContaining({
+            generationMode: 'quick',
+            targetOutput: 'script',
+            executionMode: expect.stringMatching(/direct|segmented/),
+            complexityInfo: expect.objectContaining({
+              recommendedExecutionMode: expect.stringMatching(/direct|segmented/),
+            }),
+            chunkPlan: expect.objectContaining({
+              strategy: expect.stringMatching(/single|segmented/),
+              chunkCount: expect.any(Number),
+              chunks: expect.any(Array),
+            }),
+          }),
+        }),
       })
     );
     expect(mocks.createSSEStreamResponse).toHaveBeenCalled();
+  });
+
+  it('preserves an explicit segmented execution mode in the legacy route body', async () => {
+    await POST(
+      new NextRequest('https://app.test/api/generate', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          ...validBody(),
+          mode: 'longform',
+          targetOutput: 'prompt_pack',
+          executionMode: 'segmented',
+        }),
+      })
+    );
+
+    const runtime = mocks.getPlatformRuntime.mock.results[0]?.value;
+    expect(runtime.generationJobs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputSnapshot: expect.objectContaining({
+          generationMode: 'longform',
+          targetOutput: 'prompt_pack',
+          executionMode: 'segmented',
+          metadata: expect.objectContaining({
+            generationMode: 'longform',
+            targetOutput: 'prompt_pack',
+            executionMode: 'segmented',
+          }),
+        }),
+      })
+    );
+    expect(mocks.runScriptGeneration).not.toHaveBeenCalled();
   });
 
   it('marks the job failed when the SSE producer generation step throws', async () => {

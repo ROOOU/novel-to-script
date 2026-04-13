@@ -97,7 +97,7 @@ describe('POST /api/projects/[projectId]/pipelines', () => {
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       userId: 'user_1',
-      body: {
+      body: expect.objectContaining({
         text: 'novel text',
         genre: 'urban',
         config: {
@@ -111,8 +111,64 @@ describe('POST /api/projects/[projectId]/pipelines', () => {
           visualStyle: 'cinematic realism',
           safeMode: true,
         },
+        executionMode: expect.stringMatching(/direct|segmented/),
+        complexityInfo: expect.objectContaining({
+          recommendedExecutionMode: expect.stringMatching(/direct|segmented/),
+        }),
+      }),
+    });
+  });
+
+  it('preserves an explicit segmented pipeline mode from the request payload', async () => {
+    mocks.getPlatformRuntime.mockReturnValue({
+      projects: {
+        getById: vi.fn().mockResolvedValue({
+          id: 'proj_1',
+          organizationId: 'org_1',
+          workspaceId: 'ws_1',
+        }),
       },
     });
+    mocks.createNovelToStoryboardPipeline.mockResolvedValue({
+      mode: 'novel-to-storyboard',
+      job: { id: 'job_script_2' },
+    });
+
+    const request = new NextRequest('http://localhost/api/projects/proj_1/pipelines', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'novel-to-storyboard',
+        payload: {
+          text: 'novel text',
+          genre: 'urban',
+          config: {
+            genre: 'urban',
+            episodeCount: 6,
+            episodeDuration: '1:30-2:00',
+            style: 'dramatic',
+            includeDirectorNotes: true,
+          },
+          executionMode: 'segmented',
+        },
+      }),
+      headers: {
+        'content-type': 'application/json',
+      },
+    });
+
+    const response = await POST(request, { params: Promise.resolve({ projectId: 'proj_1' }) });
+
+    expect(response.status).toBe(200);
+    expect(mocks.createNovelToStoryboardPipeline).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          executionMode: 'segmented',
+          complexityInfo: expect.objectContaining({
+            recommendedExecutionMode: expect.stringMatching(/direct|segmented/),
+          }),
+        }),
+      })
+    );
   });
 
   it('returns project not found for foreign projects', async () => {

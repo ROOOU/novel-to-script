@@ -598,6 +598,7 @@ h3,
 .project-card {
   display: block;
   text-decoration: none;
+  position: relative;
 }
 
 .feature-card h2 {
@@ -1281,6 +1282,214 @@ h3,
   max-height: 420px;
 }
 
+.artifact-reading-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.artifact-reading-stat {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02));
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.artifact-reading-stat span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.artifact-reading-stat strong {
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.artifact-reader-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  gap: 18px;
+  margin-top: 16px;
+}
+
+.artifact-reader-outline {
+  position: sticky;
+  top: 96px;
+  align-self: start;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.025);
+  padding: 14px;
+}
+
+.artifact-reader-outline-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.artifact-reader-outline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.artifact-reader-outline-label {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.artifact-reader-outline-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.artifact-reader-outline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 460px;
+  overflow: auto;
+}
+
+.artifact-reader-outline-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-decoration: none;
+  border-radius: 14px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  border: 1px solid transparent;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.artifact-reader-outline-link:hover {
+  background: rgba(245, 158, 11, 0.08);
+  border-color: rgba(245, 158, 11, 0.18);
+}
+
+.artifact-reader-outline-link small {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.artifact-reader-body {
+  min-width: 0;
+}
+
+.artifact-reader-article {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.artifact-reader-section {
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.025)),
+    radial-gradient(circle at top right, rgba(245, 158, 11, 0.08), transparent 36%);
+  padding: 18px 20px;
+}
+
+.artifact-reader-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.artifact-reader-section-head h4 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.artifact-reader-section-head span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.artifact-reader-section-body {
+  max-width: 78ch;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.artifact-reader-line {
+  color: rgba(235, 235, 245, 0.92);
+  font-size: 15px;
+  line-height: 1.92;
+  letter-spacing: 0.01em;
+  white-space: pre-wrap;
+}
+
+.artifact-reader-line-heading {
+  font-weight: 700;
+  color: var(--text-primary);
+  font-size: 16px;
+  padding-left: 14px;
+  border-left: 3px solid rgba(245, 158, 11, 0.48);
+}
+
+.artifact-reader-line-dialogue {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.artifact-reader-line-stage {
+  color: rgba(199, 207, 221, 0.82);
+  font-style: italic;
+}
+
+.artifact-inline-speaker {
+  flex: 0 0 auto;
+  min-width: 54px;
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+.artifact-inline-dialogue {
+  color: rgba(241, 245, 249, 0.94);
+}
+
+.artifact-preview-code {
+  margin-top: 0;
+  max-height: 620px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: rgba(233, 233, 241, 0.84);
+}
+
 .timeline-list {
   display: flex;
   flex-direction: column;
@@ -1473,6 +1682,14 @@ h3,
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .artifact-reader-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .artifact-reader-outline {
+    position: static;
+  }
+
   .artifact-detail-header,
   .artifact-browser-toolbar {
     flex-direction: column;
@@ -1489,6 +1706,15 @@ h3,
 
   .pipeline-stage-rail {
     grid-template-columns: 1fr;
+  }
+
+  .workflow-stage-grid,
+  .workflow-detail-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-board-header {
+    flex-direction: column;
   }
 
   .header-inner {
@@ -3190,11 +3416,212 @@ body {
 }
 
 .workspace-flow-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   border-radius: 36px;
   padding: 10px;
   background: rgba(255, 255, 255, 0.42);
   border: 1px solid rgba(31, 27, 22, 0.12);
   box-shadow: 0 12px 26px rgba(56, 43, 24, 0.06);
+}
+
+.workflow-board {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 18px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top right, rgba(84, 134, 255, 0.12), transparent 24%),
+    radial-gradient(circle at top left, rgba(245, 106, 106, 0.1), transparent 26%),
+    linear-gradient(180deg, rgba(255, 251, 244, 0.98), rgba(255, 246, 233, 0.98));
+  border: 1px solid rgba(31, 27, 22, 0.1);
+}
+
+.workflow-board-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.workflow-board-actions,
+.workflow-subnav {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.workflow-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.workflow-stage-card {
+  border: 1px solid rgba(31, 27, 22, 0.1);
+  border-radius: 26px;
+  padding: 18px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 14px 30px rgba(74, 53, 24, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.workflow-stage-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(74, 53, 24, 0.12);
+}
+
+.workflow-stage-card.active {
+  transform: translateY(-3px);
+  box-shadow: 0 20px 40px rgba(74, 53, 24, 0.14);
+}
+
+.workflow-stage-card-novel {
+  background: linear-gradient(180deg, rgba(255, 244, 240, 0.96), rgba(255, 252, 249, 0.92));
+  border-color: rgba(234, 96, 77, 0.2);
+}
+
+.workflow-stage-card-script {
+  background: linear-gradient(180deg, rgba(237, 244, 255, 0.96), rgba(249, 252, 255, 0.92));
+  border-color: rgba(89, 125, 240, 0.2);
+}
+
+.workflow-stage-card-storyboard {
+  background: linear-gradient(180deg, rgba(244, 250, 235, 0.96), rgba(253, 255, 249, 0.92));
+  border-color: rgba(110, 170, 56, 0.24);
+}
+
+.workflow-stage-card-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.workflow-stage-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.workflow-stage-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(31, 27, 22, 0.08);
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.workflow-stage-meta {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.workflow-stage-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workflow-stage-card-body h3 {
+  font-size: clamp(1.25rem, 1.6vw, 1.65rem);
+  line-height: 1.05;
+}
+
+.workflow-stage-card-body p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.65;
+}
+
+.workflow-stage-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+}
+
+.workflow-stage-progress-track {
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(31, 27, 22, 0.08);
+  overflow: hidden;
+}
+
+.workflow-stage-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 126, 126, 0.95), rgba(129, 104, 255, 0.95));
+}
+
+.workflow-stage-card-storyboard .workflow-stage-progress-fill {
+  background: linear-gradient(90deg, rgba(109, 192, 94, 0.95), rgba(233, 212, 103, 0.95));
+}
+
+.workflow-stage-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.workflow-stage-stats span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.workflow-stage-stats strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.workflow-detail-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 16px;
+  align-items: end;
+  padding: 16px 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.68);
+  border: 1px solid rgba(31, 27, 22, 0.08);
+}
+
+.workflow-detail-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.workflow-detail-copy h3 {
+  font-size: clamp(1.1rem, 1.6vw, 1.5rem);
+  line-height: 1.12;
+}
+
+.workflow-detail-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.65;
 }
 
 .workspace-tab-shell {
@@ -3268,6 +3695,12 @@ body {
   align-items: end;
 }
 
+.workspace-preview-band {
+  background:
+    radial-gradient(circle at top right, rgba(126, 89, 255, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(252, 247, 237, 0.96));
+}
+
 .workspace-stage-copy {
   display: flex;
   flex-direction: column;
@@ -3283,6 +3716,17 @@ body {
   margin: 0;
   max-width: 64ch;
   color: var(--text-secondary);
+}
+
+.workspace-preview-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 20px;
+  border-radius: 34px;
+  border: 1px solid rgba(31, 27, 22, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 250, 242, 0.98));
+  box-shadow: 0 20px 42px rgba(56, 43, 24, 0.08);
 }
 
 .workspace-stage-pills {
@@ -3412,6 +3856,39 @@ body {
 
 .project-card-footer strong {
   font-size: 0.92rem;
+}
+
+.project-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.project-card-delete {
+  border-color: rgba(185, 28, 28, 0.2);
+  color: #991b1b;
+}
+
+.project-card-pending {
+  opacity: 0.86;
+}
+
+.project-card-pending::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0) 20%,
+    rgba(255, 255, 255, 0.24) 50%,
+    rgba(255, 255, 255, 0) 80%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.3s linear infinite;
 }
 
 .project-empty-card {
@@ -3648,6 +4125,12 @@ body {
   .workspace-stage-band,
   .workspace-tab-summary {
     padding: 18px;
+    border-radius: 24px;
+  }
+
+  .workflow-board,
+  .workspace-preview-shell {
+    padding: 16px;
     border-radius: 24px;
   }
 

@@ -37,6 +37,10 @@ export function createStoryboardStreamHandlers({
       setCurrentStep(String(data.message ?? '解析完成'));
     },
     generating: () => { setCurrentStep('生成分镜提示词...'); setProgress(30); },
+    safety_retry: (data) => {
+      setCurrentStep(String(data.message ?? '正在执行安全摘要重试...'));
+      setProgress(35);
+    },
     content_policy_blocked: (data) => {
       setCurrentStep(String(data.message ?? '内容安全拦截'));
       setProgress(0);

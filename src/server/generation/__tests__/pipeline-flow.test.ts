@@ -95,10 +95,24 @@ describe('novel-to-storyboard pipeline integration', () => {
         metadata: {},
       });
       await input.onArtifact?.({
+        kind: 'story_bible',
+        title: '故事圣经',
+        format: 'application/json',
+        content: '{"projectSummary":"测试分析"}',
+        metadata: {},
+      });
+      await input.onArtifact?.({
         kind: 'outline',
         title: '分集大纲',
         format: 'application/json',
         content: '[{"episodeNumber":1,"title":"第一集"}]',
+        metadata: {},
+      });
+      await input.onArtifact?.({
+        kind: 'scene_cards',
+        title: '场景卡',
+        format: 'application/json',
+        content: '[{"sceneId":"scene-01","title":"第一集"}]',
         metadata: {},
       });
       await input.onArtifact?.({
@@ -120,6 +134,25 @@ describe('novel-to-storyboard pipeline integration', () => {
         content: '镜头1｜远景｜测试分镜',
         metadata: {
           sourceScriptArtifactIds: input.body.scriptArtifactIds ?? [],
+        },
+      });
+      await input.onArtifact?.({
+        kind: 'shot_plan',
+        title: '结构化镜头计划',
+        format: 'application/json',
+        content: '[]',
+        metadata: {
+          sourceScriptArtifactIds: input.body.scriptArtifactIds ?? [],
+        },
+      });
+      await input.onArtifact?.({
+        kind: 'prompt_pack',
+        title: '视频提示词包',
+        format: 'application/json',
+        content: '[]',
+        metadata: {
+          sourceScriptArtifactIds: input.body.scriptArtifactIds ?? [],
+          targetPlatform: 'generic-video',
         },
       });
       await input.onProgress?.({ progress: 100, currentStep: 'done', outputSummary: 'storyboard generated' });
@@ -228,9 +261,13 @@ describe('novel-to-storyboard pipeline integration', () => {
     const scriptJob = bundle.jobs.find((job: GenerationJob) => job.kind === 'script-generation');
     const storyboardJob = bundle.jobs.find((job: GenerationJob) => job.kind === 'storyboard-generation');
     const analysisArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'analysis');
+    const storyBibleArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'story_bible');
+    const sceneCardsArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'scene_cards');
     const outlineArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'outline');
     const scriptArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'script');
     const storyboardArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'storyboard');
+    const shotPlanArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'shot_plan');
+    const promptPackArtifact = bundle.artifacts.find((artifact: GenerationArtifact) => artifact.kind === 'prompt_pack');
     const account = await runtime.creditAccounts.getByOrganizationId(organization.id);
     const storedProject = await runtime.projects.getById(project.id);
 
@@ -257,13 +294,17 @@ describe('novel-to-storyboard pipeline integration', () => {
     expect(bundle.artifacts.map((artifact: GenerationArtifact) => artifact.kind).sort()).toEqual([
       'analysis',
       'outline',
+      'prompt_pack',
+      'scene_cards',
       'script',
+      'shot_plan',
+      'story_bible',
       'storyboard',
     ]);
     expect(storyboardArtifact?.metadata).toMatchObject({
       sourceScriptArtifactIds: [scriptArtifact?.id],
     });
-    expect(bundle.artifactRelations).toHaveLength(3);
+    expect(bundle.artifactRelations).toHaveLength(10);
     expect(
       bundle.artifactRelations
         .map((relation: ArtifactRelation) => ({
@@ -278,8 +319,24 @@ describe('novel-to-storyboard pipeline integration', () => {
     ).toEqual(
       [
         {
+          upstreamArtifactId: analysisArtifact?.id,
+          downstreamArtifactId: storyBibleArtifact?.id,
+        },
+        {
           upstreamArtifactId: scriptArtifact?.id,
           downstreamArtifactId: storyboardArtifact?.id,
+        },
+        {
+          upstreamArtifactId: scriptArtifact?.id,
+          downstreamArtifactId: shotPlanArtifact?.id,
+        },
+        {
+          upstreamArtifactId: scriptArtifact?.id,
+          downstreamArtifactId: promptPackArtifact?.id,
+        },
+        {
+          upstreamArtifactId: outlineArtifact?.id,
+          downstreamArtifactId: sceneCardsArtifact?.id,
         },
         {
           upstreamArtifactId: outlineArtifact?.id,
@@ -288,6 +345,18 @@ describe('novel-to-storyboard pipeline integration', () => {
         {
           upstreamArtifactId: analysisArtifact?.id,
           downstreamArtifactId: outlineArtifact?.id,
+        },
+        {
+          upstreamArtifactId: storyBibleArtifact?.id,
+          downstreamArtifactId: sceneCardsArtifact?.id,
+        },
+        {
+          upstreamArtifactId: storyboardArtifact?.id,
+          downstreamArtifactId: shotPlanArtifact?.id,
+        },
+        {
+          upstreamArtifactId: shotPlanArtifact?.id,
+          downstreamArtifactId: promptPackArtifact?.id,
         },
       ].sort((left: { upstreamArtifactId: string | undefined; downstreamArtifactId: string | undefined }, right: { upstreamArtifactId: string | undefined; downstreamArtifactId: string | undefined }) =>
         `${left.upstreamArtifactId}:${left.downstreamArtifactId}`.localeCompare(
@@ -322,10 +391,24 @@ describe('novel-to-storyboard pipeline integration', () => {
         metadata: {},
       });
       await input.onArtifact?.({
+        kind: 'story_bible',
+        title: '故事圣经',
+        format: 'application/json',
+        content: '{"projectSummary":"测试分析"}',
+        metadata: {},
+      });
+      await input.onArtifact?.({
         kind: 'outline',
         title: '分集大纲',
         format: 'application/json',
         content: '[{"episodeNumber":1,"title":"第一集"}]',
+        metadata: {},
+      });
+      await input.onArtifact?.({
+        kind: 'scene_cards',
+        title: '场景卡',
+        format: 'application/json',
+        content: '[{"sceneId":"scene-01","title":"第一集"}]',
         metadata: {},
       });
       await input.onArtifact?.({
@@ -462,9 +545,11 @@ describe('novel-to-storyboard pipeline integration', () => {
     expect(bundle.artifacts.map((artifact: GenerationArtifact) => artifact.kind).sort()).toEqual([
       'analysis',
       'outline',
+      'scene_cards',
       'script',
+      'story_bible',
     ]);
-    expect(bundle.artifactRelations).toHaveLength(2);
+    expect(bundle.artifactRelations).toHaveLength(5);
     expect(account).toMatchObject({
       availableCredits: 55,
       reservedCredits: 0,

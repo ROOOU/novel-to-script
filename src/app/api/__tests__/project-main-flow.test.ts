@@ -117,10 +117,24 @@ describe('project API main flow integration', () => {
         metadata: {},
       });
       await input.onArtifact?.({
+        kind: 'story_bible',
+        title: '故事圣经',
+        format: 'application/json',
+        content: '{"projectSummary":"测试分析"}',
+        metadata: {},
+      });
+      await input.onArtifact?.({
         kind: 'outline',
         title: '分集大纲',
         format: 'application/json',
         content: '[{"episodeNumber":1,"title":"第一集"}]',
+        metadata: {},
+      });
+      await input.onArtifact?.({
+        kind: 'scene_cards',
+        title: '场景卡',
+        format: 'application/json',
+        content: '[{"sceneId":"scene-01","title":"第一集"}]',
         metadata: {},
       });
       await input.onArtifact?.({
@@ -141,6 +155,25 @@ describe('project API main flow integration', () => {
         content: '镜头1｜远景｜测试分镜',
         metadata: {
           sourceScriptArtifactIds: input.body.scriptArtifactIds ?? [],
+        },
+      });
+      await input.onArtifact?.({
+        kind: 'shot_plan',
+        title: '结构化镜头计划',
+        format: 'application/json',
+        content: '[]',
+        metadata: {
+          sourceScriptArtifactIds: input.body.scriptArtifactIds ?? [],
+        },
+      });
+      await input.onArtifact?.({
+        kind: 'prompt_pack',
+        title: '视频提示词包',
+        format: 'application/json',
+        content: '[]',
+        metadata: {
+          sourceScriptArtifactIds: input.body.scriptArtifactIds ?? [],
+          targetPlatform: 'generic-video',
         },
       });
       await input.onProgress?.({ progress: 100, currentStep: 'done', outputSummary: 'storyboard generated' });
@@ -306,13 +339,17 @@ describe('project API main flow integration', () => {
     expect(artifacts.map((artifact) => artifact.kind).sort()).toEqual([
       'analysis',
       'outline',
+      'prompt_pack',
+      'scene_cards',
       'script',
+      'shot_plan',
+      'story_bible',
       'storyboard',
     ]);
-    expect(relations).toHaveLength(3);
+    expect(relations).toHaveLength(10);
     expect(
       relations.map((relation) => [relation.upstreamArtifactId, relation.downstreamArtifactId]).length
-    ).toBe(3);
+    ).toBe(10);
     expect(bundlePayload.insights.collections).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'script', count: 1 }),
@@ -341,10 +378,24 @@ describe('project API main flow integration', () => {
         metadata: {},
       });
       await input.onArtifact?.({
+        kind: 'story_bible',
+        title: '故事圣经',
+        format: 'application/json',
+        content: '{"projectSummary":"失败前分析"}',
+        metadata: {},
+      });
+      await input.onArtifact?.({
         kind: 'outline',
         title: '分集大纲',
         format: 'application/json',
         content: '[{"episodeNumber":1,"title":"失败前大纲"}]',
+        metadata: {},
+      });
+      await input.onArtifact?.({
+        kind: 'scene_cards',
+        title: '场景卡',
+        format: 'application/json',
+        content: '[{"sceneId":"scene-01","title":"失败前大纲"}]',
         metadata: {},
       });
       throw new Error('SCRIPT_PROVIDER_FAILED');
@@ -481,6 +532,8 @@ describe('project API main flow integration', () => {
     expect(artifacts.map((artifact) => artifact.kind).sort()).toEqual([
       'analysis',
       'outline',
+      'scene_cards',
+      'story_bible',
     ]);
     expect(relations).toHaveLength(0);
     expect(account).toMatchObject({
