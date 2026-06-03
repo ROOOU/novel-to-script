@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireViewerResponse } from '@/server/auth/http';
 import { viewerOwnsArtifact } from '@/server/auth/viewer-access';
+import { readStoredMedia } from '@/server/media/store';
 import { getPlatformRuntime } from '@/server/shared/platform';
 import type { GenerationArtifactFormat } from '@/server/shared/platform/domain';
 
@@ -27,7 +28,10 @@ export async function GET(
   }
 
   const filename = resolveArtifactFilename(artifact.title, artifact.format, artifact.metadata?.downloadFilename);
-  const body = resolveArtifactDownloadBody(artifact.content ?? '', artifact.metadata?.contentEncoding);
+  const body =
+    artifact.storageKey
+      ? (await readStoredMedia(artifact.storageKey)).buffer
+      : resolveArtifactDownloadBody(artifact.content ?? '', artifact.metadata?.contentEncoding);
   const contentType = resolveContentTypeHeader(artifact.format);
 
   return new NextResponse(body, {
@@ -63,6 +67,14 @@ function extensionForFormat(format: GenerationArtifactFormat) {
       return 'pdf';
     case 'application/zip':
       return 'zip';
+    case 'image/png':
+      return 'png';
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/webp':
+      return 'webp';
+    case 'video/mp4':
+      return 'mp4';
     case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
       return 'docx';
     case 'text/plain':
@@ -80,7 +92,13 @@ function resolveArtifactDownloadBody(content: string, contentEncoding: unknown) 
 }
 
 function resolveContentTypeHeader(format: GenerationArtifactFormat) {
-  if (format === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+  if (
+    format === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+    format === 'application/pdf' ||
+    format === 'application/zip' ||
+    format.startsWith('image/') ||
+    format.startsWith('video/')
+  ) {
     return format;
   }
 

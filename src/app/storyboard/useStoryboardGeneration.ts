@@ -10,6 +10,8 @@ import {
 } from '@/features/storyboard/contracts';
 import { createStoryboardStreamHandlers, type SafeModePromptState } from './stream-handlers';
 
+const DEFAULT_STORYBOARD_TARGET_PLATFORM = 'seedance' as const;
+
 interface StoryboardGenerationConfig {
   scriptText: string;
   visualStyle: string;
@@ -82,6 +84,7 @@ export function useStoryboardGeneration({
         colorTone,
         genreLabel: GENRE_VISUAL_LABELS[genreType],
         safeMode,
+        targetPlatform: DEFAULT_STORYBOARD_TARGET_PLATFORM,
       },
       handlers: createStoryboardStreamHandlers({
         resultRef,

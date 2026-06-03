@@ -1,6 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import {
+  WorkspaceListRow,
+  WorkspaceStatusPill,
+} from '@/components/WorkspaceUI';
 import type {
   GenerationArtifact,
   GenerationJob,
@@ -121,13 +125,13 @@ export function JobTimelinePanel({
   return (
     <article className="card stack-gap job-timeline-panel">
       <div className="stack-gap-sm">
-        <div className="list-row">
+        <WorkspaceListRow>
           <div>
             <h2>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
           <span className="chip">{orderedJobs.length}</span>
-        </div>
+        </WorkspaceListRow>
       </div>
 
       {hasPipeline ? (
@@ -168,9 +172,9 @@ export function JobTimelinePanel({
                     <div>
                       <div className="timeline-card-topline">
                         <strong>{formatJobKind(locale, job.kind)}</strong>
-                        <span className={`status-pill status-pill-${statusTone}`}>
+                        <WorkspaceStatusPill tone={statusTone}>
                           {formatJobStatus(locale, job.status)}
-                        </span>
+                        </WorkspaceStatusPill>
                       </div>
                       <p className="timeline-step">
                         {job.currentStep ?? mergedLabels.stagePlaceholder}
@@ -193,16 +197,14 @@ export function JobTimelinePanel({
 
                   {scriptDiagnostics ? (
                     <div className="source-job-card">
-                      <div className="list-row">
+                      <WorkspaceListRow>
                         <strong>{mergedLabels.scriptDiagnostics}</strong>
-                        <span
-                          className={`status-pill status-pill-${
-                            scriptDiagnostics.executionMode === 'segmented' ? 'running' : 'success'
-                          }`}
+                        <WorkspaceStatusPill
+                          tone={scriptDiagnostics.executionMode === 'segmented' ? 'running' : 'success'}
                         >
                           {formatExecutionModeLabel(locale, scriptDiagnostics.executionMode)}
-                        </span>
-                      </div>
+                        </WorkspaceStatusPill>
+                      </WorkspaceListRow>
                       <p className="helper-text">
                         {formatExecutionBehaviorSummary(locale, scriptDiagnostics)}
                       </p>
@@ -248,22 +250,22 @@ export function JobTimelinePanel({
 
                   {storyboardDiagnostics ? (
                     <div className="source-job-card">
-                      <div className="list-row">
+                      <WorkspaceListRow>
                         <strong>{mergedLabels.diagnostics}</strong>
-                        <span
-                          className={`status-pill status-pill-${
+                        <WorkspaceStatusPill
+                          tone={
                             storyboardDiagnostics.parseError || storyboardDiagnostics.invalidShotIndexes.length > 0
                               ? 'danger'
                               : storyboardDiagnostics.fallbackMode
                                 ? 'running'
                                 : 'success'
-                          }`}
+                          }
                         >
                           {storyboardDiagnostics.fallbackMode
                             ? formatFallbackModeLabel(mergedLabels, storyboardDiagnostics.fallbackMode)
                             : mergedLabels.diagnosticsStructured}
-                        </span>
-                      </div>
+                        </WorkspaceStatusPill>
+                      </WorkspaceListRow>
                       <p className="helper-text">
                         {[
                           `${mergedLabels.diagnosticsShotCount} ${storyboardDiagnostics.shotCount}`,

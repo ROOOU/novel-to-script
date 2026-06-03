@@ -24,6 +24,7 @@
 .DS_Store
 *.pem
 .novelscript/
+.vercel-env-backups/
 .worktrees/
 
 # debug
@@ -43,3 +44,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .gstack/
+
+# clerk configuration (can include secrets)
+/.clerk/

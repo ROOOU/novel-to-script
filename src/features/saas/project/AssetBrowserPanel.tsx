@@ -1,6 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import { useMemo, useState } from 'react';
+import { WorkspaceListRow, WorkspaceStatusPill } from '@/components/WorkspaceUI';
 import type {
   ArtifactRelation,
   GenerationArtifact,
@@ -46,6 +48,8 @@ interface AssetBrowserPanelProps {
     storyboard: string;
     shot_plan: string;
     prompt_pack: string;
+    reference_image: string;
+    video_clip: string;
     export: string;
     prompt: string;
     searchPlaceholder: string;
@@ -85,6 +89,8 @@ const KIND_ORDER: GenerationArtifact['kind'][] = [
   'storyboard',
   'shot_plan',
   'prompt_pack',
+  'reference_image',
+  'video_clip',
   'export',
   'prompt',
 ];
@@ -119,6 +125,8 @@ export function AssetBrowserPanel({
     storyboard: mergedLabels.storyboard,
     shot_plan: mergedLabels.shot_plan,
     prompt_pack: mergedLabels.prompt_pack,
+    reference_image: mergedLabels.reference_image,
+    video_clip: mergedLabels.video_clip,
     export: mergedLabels.export,
     prompt: mergedLabels.prompt,
   };
@@ -165,8 +173,18 @@ export function AssetBrowserPanel({
         : null,
     [artifactRelations, artifacts, selectedArtifact]
   );
-  const selectedUpstreamArtifacts = selectedLineage?.directUpstream ?? [];
-  const selectedDownstreamArtifacts = selectedLineage?.directDownstream ?? [];
+  const selectedUpstreamArtifacts = useMemo(
+    () => selectedLineage?.directUpstream ?? [],
+    [selectedLineage]
+  );
+  const selectedDownstreamArtifacts = useMemo(
+    () => selectedLineage?.directDownstream ?? [],
+    [selectedLineage]
+  );
+  const selectedLineageUpstreamArtifacts = useMemo(
+    () => selectedLineage?.upstream ?? [],
+    [selectedLineage]
+  );
   const selectedScriptDiagnostics = useMemo(() => {
     if (!selectedArtifact) {
       return null;
@@ -174,7 +192,7 @@ export function AssetBrowserPanel({
 
     const upstreamArtifacts = [
       ...selectedUpstreamArtifacts,
-      ...(selectedLineage?.upstream ?? []),
+      ...selectedLineageUpstreamArtifacts,
     ]
       .map((entry) => entry.artifact)
       .filter((artifact): artifact is GenerationArtifact => Boolean(artifact));
@@ -187,7 +205,7 @@ export function AssetBrowserPanel({
     );
 
     return readMergedScriptDiagnostics(diagnosticsArtifacts.map((artifact) => artifact.metadata));
-  }, [selectedArtifact, selectedLineage?.upstream, selectedUpstreamArtifacts]);
+  }, [selectedArtifact, selectedLineageUpstreamArtifacts, selectedUpstreamArtifacts]);
   const productionChain = selectedLineage?.stageCounts ?? [
     { kind: 'analysis' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'analysis').length },
     { kind: 'story_bible' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'story_bible').length },
@@ -197,6 +215,8 @@ export function AssetBrowserPanel({
     { kind: 'storyboard' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'storyboard').length },
     { kind: 'shot_plan' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'shot_plan').length },
     { kind: 'prompt_pack' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'prompt_pack').length },
+    { kind: 'reference_image' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'reference_image').length },
+    { kind: 'video_clip' as const, artifacts: [], count: artifacts.filter((artifact) => artifact.kind === 'video_clip').length },
   ];
   const chainPreview = selectedLineage?.chainArtifacts
     .map((artifact) => `${formatArtifactKind(locale, artifact.kind)} v${artifact.version}`)
@@ -238,13 +258,13 @@ export function AssetBrowserPanel({
   return (
     <article className="card stack-gap asset-browser-panel">
       <div className="stack-gap-sm">
-        <div className="list-row">
+        <WorkspaceListRow>
           <div>
             <h2>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
           <span className="chip">{filteredArtifacts.length}</span>
-        </div>
+        </WorkspaceListRow>
       </div>
 
       <div className="artifact-browser-toolbar">
@@ -300,10 +320,10 @@ export function AssetBrowserPanel({
       </div>
 
       <section className="artifact-source-panel">
-        <div className="list-row">
+        <WorkspaceListRow>
           <strong>{mergedLabels.productionChain}</strong>
           <span className="chip">{productionChain.reduce((sum, item) => sum + item.count, 0)}</span>
-        </div>
+        </WorkspaceListRow>
         <div className="artifact-filter-bar">
           {productionChain.map((item, index) => (
             <div key={item.kind} className={`filter-chip filter-chip-${item.kind}`}>
@@ -332,26 +352,18 @@ export function AssetBrowserPanel({
                     className={`artifact-browser-item ${selectedArtifact?.id === artifact.id ? 'active' : ''}`}
                     onClick={() => setManualSelectedArtifactId(artifact.id)}
                   >
-                    <div className="list-row">
+                    <WorkspaceListRow>
                       <div>
                         <strong>{artifact.title}</strong>
                         <p>{formatArtifactKind(locale, artifact.kind)} · v{artifact.version}</p>
                       </div>
-                      <span className={`status-pill status-pill-${statusTone}`}>
+                      <WorkspaceStatusPill tone={statusTone}>
                         {formatJobStatus(locale, job?.status ?? 'pending')}
-                      </span>
-                    </div>
+                      </WorkspaceStatusPill>
+                    </WorkspaceListRow>
                     <div className="artifact-browser-meta">
                       <span>{formatLocaleDateTime(locale, artifact.createdAt)}</span>
-                      <span>
-                        {artifact.content
-                          ? locale === 'en-US'
-                            ? `${artifact.content.length} chars`
-                            : `${artifact.content.length} 字`
-                          : locale === 'en-US'
-                            ? 'empty'
-                            : '空'}
-                      </span>
+                      <span>{formatArtifactMetric(locale, artifact)}</span>
                     </div>
                   </button>
                 );
@@ -382,13 +394,49 @@ export function AssetBrowserPanel({
               </div>
 
               <div className="artifact-preview-panel">
-                <div className="list-row">
+                <WorkspaceListRow>
                   <strong>{mergedLabels.relationSummary}</strong>
-                  <span className={`status-pill status-pill-${getJobTone(selectedJob?.status)}`}>
+                  <WorkspaceStatusPill tone={getJobTone(selectedJob?.status)}>
                     {formatJobStatus(locale, selectedJob?.status ?? 'pending')}
-                  </span>
-                </div>
-                {selectedPreview ? (
+                  </WorkspaceStatusPill>
+                </WorkspaceListRow>
+                {isImageArtifact(selectedArtifact) ? (
+                  <div className="stack-gap-sm">
+                    <div
+                      style={{
+                        position: 'relative',
+                        width: '100%',
+                        height: 'min(70vh, 30rem)',
+                        borderRadius: '1rem',
+                        overflow: 'hidden',
+                        background: 'rgba(15, 23, 42, 0.06)',
+                      }}
+                    >
+                      <Image
+                        src={
+                          downloadHrefForArtifact?.(selectedArtifact) ??
+                          `/api/artifacts/${selectedArtifact.id}/download`
+                        }
+                        alt={selectedArtifact.title}
+                        fill
+                        unoptimized
+                        sizes="(max-width: 768px) 100vw, 50vw"
+                        style={{ objectFit: 'contain' }}
+                      />
+                    </div>
+                    <p className="helper-text">{formatArtifactMetric(locale, selectedArtifact)}</p>
+                  </div>
+                ) : isVideoArtifact(selectedArtifact) ? (
+                  <div className="stack-gap-sm">
+                    <video
+                      controls
+                      preload="metadata"
+                      src={downloadHrefForArtifact?.(selectedArtifact) ?? `/api/artifacts/${selectedArtifact.id}/download`}
+                      style={{ width: '100%', borderRadius: '1rem', background: 'rgba(15, 23, 42, 0.85)' }}
+                    />
+                    <p className="helper-text">{formatArtifactMetric(locale, selectedArtifact)}</p>
+                  </div>
+                ) : selectedPreview ? (
                   <>
                     <div className="artifact-reading-strip">
                       {selectedPreview.stats.map((stat) => (
@@ -511,16 +559,14 @@ export function AssetBrowserPanel({
 
               {selectedScriptDiagnostics ? (
                 <section className="artifact-source-panel">
-                  <div className="list-row">
+                  <WorkspaceListRow>
                     <strong>{mergedLabels.executionDiagnostics}</strong>
-                    <span
-                      className={`status-pill status-pill-${
-                        selectedScriptDiagnostics.executionMode === 'segmented' ? 'running' : 'success'
-                      }`}
+                    <WorkspaceStatusPill
+                      tone={selectedScriptDiagnostics.executionMode === 'segmented' ? 'running' : 'success'}
                     >
                       {formatExecutionModeLabel(locale, selectedScriptDiagnostics.executionMode)}
-                    </span>
-                  </div>
+                    </WorkspaceStatusPill>
+                  </WorkspaceListRow>
                   <p className="helper-text">
                     {formatExecutionBehaviorSummary(locale, selectedScriptDiagnostics)}
                   </p>
@@ -554,10 +600,10 @@ export function AssetBrowserPanel({
               ) : null}
 
               <section className="artifact-source-panel">
-                <div className="list-row">
+                <WorkspaceListRow>
                   <strong>{mergedLabels.sourceArtifacts}</strong>
                   <span className="chip">{selectedUpstreamArtifacts.length}</span>
-                </div>
+                </WorkspaceListRow>
 
                 {selectedUpstreamArtifacts.length === 0 ? (
                   <p className="helper-text">{mergedLabels.sourceFallback}</p>
@@ -571,19 +617,19 @@ export function AssetBrowserPanel({
                       if (!artifact) {
                         return (
                           <article key={entry.artifactId} className="source-chain-card">
-                            <div className="list-row">
+                            <WorkspaceListRow>
                               <div>
                                 <strong>{shortenId(entry.artifactId)}</strong>
                                 <p>{mergedLabels.sourceFallback}</p>
                               </div>
-                            </div>
+                            </WorkspaceListRow>
                           </article>
                         );
                       }
 
                       return (
                         <article key={artifact.id} className="source-chain-card">
-                          <div className="list-row">
+                          <WorkspaceListRow>
                             <div>
                               <strong>{artifact.title}</strong>
                               <p>{formatArtifactKind(locale, artifact.kind)} · v{artifact.version}</p>
@@ -594,7 +640,7 @@ export function AssetBrowserPanel({
                             >
                               {mergedLabels.download}
                             </a>
-                          </div>
+                          </WorkspaceListRow>
                           <div className="artifact-browser-meta">
                             <span>{formatLocaleDateTime(locale, artifact.createdAt)}</span>
                             <span>{entry.relationType === 'metadata' ? mergedLabels.sourceFallback : entry.relationType}</span>
@@ -617,10 +663,10 @@ export function AssetBrowserPanel({
               </section>
 
               <section className="artifact-source-panel">
-                <div className="list-row">
+                <WorkspaceListRow>
                   <strong>{mergedLabels.downstreamArtifacts}</strong>
                   <span className="chip">{selectedDownstreamArtifacts.length}</span>
-                </div>
+                </WorkspaceListRow>
 
                 {selectedDownstreamArtifacts.length === 0 ? (
                   <p className="helper-text">{mergedLabels.sourceFallback}</p>
@@ -634,19 +680,19 @@ export function AssetBrowserPanel({
                       if (!artifact) {
                         return (
                           <article key={entry.artifactId} className="source-chain-card">
-                            <div className="list-row">
+                            <WorkspaceListRow>
                               <div>
                                 <strong>{shortenId(entry.artifactId)}</strong>
                                 <p>{mergedLabels.sourceFallback}</p>
                               </div>
-                            </div>
+                            </WorkspaceListRow>
                           </article>
                         );
                       }
 
                       return (
                         <article key={artifact.id} className="source-chain-card">
-                          <div className="list-row">
+                          <WorkspaceListRow>
                             <div>
                               <strong>{artifact.title}</strong>
                               <p>{formatArtifactKind(locale, artifact.kind)} · v{artifact.version}</p>
@@ -657,7 +703,7 @@ export function AssetBrowserPanel({
                             >
                               {mergedLabels.download}
                             </a>
-                          </div>
+                          </WorkspaceListRow>
                           <div className="artifact-browser-meta">
                             <span>{formatLocaleDateTime(locale, artifact.createdAt)}</span>
                             <span>{entry.relationType}</span>
@@ -813,6 +859,43 @@ function buildArtifactPreviewModel(
   };
 }
 
+function isImageArtifact(artifact: GenerationArtifact) {
+  return artifact.format.startsWith('image/');
+}
+
+function isVideoArtifact(artifact: GenerationArtifact) {
+  return artifact.format.startsWith('video/');
+}
+
+function formatArtifactMetric(locale: SupportedLocale, artifact: GenerationArtifact) {
+  const byteSize =
+    typeof artifact.metadata?.byteSize === 'number' && Number.isFinite(artifact.metadata.byteSize)
+      ? artifact.metadata.byteSize
+      : null;
+  if (byteSize !== null) {
+    return formatByteSize(locale, byteSize);
+  }
+
+  if (artifact.content) {
+    return locale === 'en-US' ? `${artifact.content.length} chars` : `${artifact.content.length} 字`;
+  }
+
+  return locale === 'en-US' ? 'empty' : '空';
+}
+
+function formatByteSize(locale: SupportedLocale, bytes: number) {
+  if (bytes < 1024) {
+    return locale === 'en-US' ? `${bytes} B` : `${bytes} 字节`;
+  }
+
+  const kilobytes = bytes / 1024;
+  if (kilobytes < 1024) {
+    return `${kilobytes.toFixed(1)} KB`;
+  }
+
+  return `${(kilobytes / 1024).toFixed(1)} MB`;
+}
+
 function splitArtifactContentIntoBlocks(content: string): string[] {
   const lines = content
     .split('\n')
@@ -901,6 +984,8 @@ function getDefaultLabels(locale: SupportedLocale) {
       storyboard: 'Storyboard',
       shot_plan: 'Shot Plan',
       prompt_pack: 'Prompt Pack',
+      reference_image: 'Reference Image',
+      video_clip: 'Video Clip',
       export: 'Export',
       prompt: 'Prompt',
       searchPlaceholder: 'Search by title or content',
@@ -941,6 +1026,8 @@ function getDefaultLabels(locale: SupportedLocale) {
     storyboard: '分镜',
     shot_plan: '镜头计划',
     prompt_pack: '提示词包',
+    reference_image: '参考图',
+    video_clip: '视频片段',
     export: '导出',
     prompt: '提示词',
     searchPlaceholder: '按标题或内容搜索',

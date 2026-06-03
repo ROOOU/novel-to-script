@@ -2,6 +2,7 @@
 
 import { startTransition, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { WorkspaceFeedback } from '@/components/WorkspaceUI';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 interface LoginFormProps {
@@ -79,7 +80,7 @@ export function LoginForm({ locale, labels }: LoginFormProps) {
             <span>{labels.displayName}</span>
             <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} type="text" />
           </label>
-          {error ? <p className="error-message">{error}</p> : null}
+          {error ? <WorkspaceFeedback tone="danger">{error}</WorkspaceFeedback> : null}
           <button type="submit" className="primary-button" disabled={submitting}>
             {submitting ? '...' : labels.action}
           </button>

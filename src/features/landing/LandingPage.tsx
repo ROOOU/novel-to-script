@@ -1,7 +1,9 @@
 import Link from 'next/link';
+import { WorkspaceCapabilityCard } from '@/components/WorkspaceUI';
 import type { Dictionary } from '@/i18n/types';
 import { PLAN_CATALOG_ENTRIES } from '@/server/billing/catalog';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
+import { LandingShowcase } from './LandingShowcase';
 
 interface LandingPageProps {
   locale: SupportedLocale;
@@ -18,6 +20,15 @@ interface LandingStep {
   title: string;
   summary: string;
   tone: 'source' | 'analysis' | 'script' | 'storyboard';
+}
+
+interface LandingStudioCard {
+  badge: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  tone: 'source' | 'script' | 'storyboard' | 'delivery';
+  meta: Array<{ label: string; value: string }>;
 }
 
 export function LandingPage({ locale, dictionary }: LandingPageProps) {
@@ -40,6 +51,7 @@ export function LandingPage({ locale, dictionary }: LandingPageProps) {
   const features = getLandingFeatures(locale, dictionary.landing.bullets);
   const steps = getLandingSteps(locale);
   const proofPoints = getProofPoints(locale);
+  const studioCards = getLandingStudioCards(locale);
 
   return (
     <div className="landing-page">
@@ -89,6 +101,8 @@ export function LandingPage({ locale, dictionary }: LandingPageProps) {
         </div>
       </section>
 
+      <LandingShowcase locale={locale} />
+
       <section className="landing-editorial-band" aria-label={isEnglish ? 'Positioning' : '产品定位'}>
         <div>
           <span className="eyebrow">{isEnglish ? 'Made for creators' : '为创作者准备'}</span>
@@ -106,6 +120,24 @@ export function LandingPage({ locale, dictionary }: LandingPageProps) {
               : '项目把源文、任务、产物和导出集中管理，而不是把能力拆成分散的匿名工具。'}
           </p>
         </div>
+      </section>
+
+      <section className="workspace-capability-grid landing-studio-grid">
+        {studioCards.map((card) => (
+          <WorkspaceCapabilityCard
+            key={`${card.badge}-${card.tone}`}
+            tone={card.tone}
+            eyebrow={card.eyebrow}
+            title={card.title}
+            badge={card.badge}
+            description={card.description}
+            meta={card.meta.map((item) => ({
+              key: `${card.badge}-${item.label}`,
+              label: item.label,
+              value: item.value,
+            }))}
+          />
+        ))}
       </section>
 
       <section className="landing-feature-grid">
@@ -263,12 +295,12 @@ function getLandingSteps(locale: SupportedLocale): LandingStep[] {
         summary: 'Generate episode-ready scripts while preserving versions for revision cycles.',
         tone: 'script',
       },
-      {
-        title: 'Storyboard handoff',
-        summary: 'Carry the approved script forward into storyboard generation and exports.',
-        tone: 'storyboard',
-      },
-    ];
+        {
+          title: 'Storyboard handoff',
+          summary: 'Carry the approved script into storyboard, shot plans, prompt packs, and exports.',
+          tone: 'storyboard',
+        },
+      ];
   }
 
   return [
@@ -287,18 +319,116 @@ function getLandingSteps(locale: SupportedLocale): LandingStep[] {
       summary: '生成可继续迭代的剧本版本，不丢失历史改稿脉络。',
       tone: 'script',
     },
-    {
-      title: '分镜衔接',
-      summary: '从已确认剧本继续推到分镜与导出交付，避免重复整理素材。',
-      tone: 'storyboard',
-    },
-  ];
-}
+      {
+        title: '分镜衔接',
+        summary: '从已确认剧本继续推到分镜、shot plan、提示词包和导出交付。',
+        tone: 'storyboard',
+      },
+    ];
+  }
 
 function getProofPoints(locale: SupportedLocale): string[] {
   return locale === 'en-US'
-    ? ['Project-based workflow', 'Version-aware artifacts', 'Credits and pricing', 'Script to storyboard handoff']
-    : ['项目化工作流', '产物版本链', '积分与套餐', '剧本衔接分镜'];
+    ? ['Project-based workflow', 'Version-aware artifacts', 'Credits and pricing', 'Seedance prompt packs']
+    : ['项目化工作流', '产物版本链', '积分与套餐', 'Seedance 提示词包'];
+}
+
+function getLandingStudioCards(locale: SupportedLocale): LandingStudioCard[] {
+  if (locale === 'en-US') {
+    return [
+      {
+        badge: '01',
+        eyebrow: 'Source',
+        title: 'Bring source material into one durable record',
+        description: 'The studio starts by keeping the original prose, brief, and references together before any drafting begins.',
+        tone: 'source',
+        meta: [
+          { label: 'Keeps', value: 'Novel + notes' },
+          { label: 'Feeds', value: 'All downstream jobs' },
+        ],
+      },
+      {
+        badge: '02',
+        eyebrow: 'Script',
+        title: 'Turn structure into a revisable short-drama draft',
+        description: 'Episode beats, pacing, and revisions stay attached to the same project instead of floating across isolated tools.',
+        tone: 'script',
+        meta: [
+          { label: 'Focus', value: 'Episodes and rhythm' },
+          { label: 'History', value: 'Version aware' },
+        ],
+      },
+      {
+        badge: '03',
+        eyebrow: 'Storyboard',
+        title: 'Keep shot plans and prompt packs visible together',
+        description: 'Storyboard output is treated as one production moment, with shots, shot plans, and Seedance-ready prompts kept side by side.',
+        tone: 'storyboard',
+        meta: [
+          { label: 'Outputs', value: 'Storyboard + prompt pack' },
+          { label: 'Ready for', value: 'Seedance flow' },
+        ],
+      },
+      {
+        badge: '04',
+        eyebrow: 'Delivery',
+        title: 'Finish with exports that still know their source',
+        description: 'Artifacts stay linked all the way into export and delivery review, so handoff is less fragile.',
+        tone: 'delivery',
+        meta: [
+          { label: 'Exports', value: 'Markdown, JSON, text' },
+          { label: 'Handoff', value: 'Traceable' },
+        ],
+      },
+    ];
+  }
+
+  return [
+    {
+      badge: '01',
+      eyebrow: '原文',
+      title: '先把素材收进稳定的项目记录里',
+      description: '工作台从原文、需求和参考资料开始收口，后面的生成都围绕同一份材料推进。',
+      tone: 'source',
+      meta: [
+        { label: '保留', value: '原文与备注' },
+        { label: '供给', value: '后续全部任务' },
+      ],
+    },
+    {
+      badge: '02',
+      eyebrow: '剧本',
+      title: '把结构推进成可持续改的短剧底稿',
+      description: '分集节奏、人物走向和剧本版本都挂在同一个项目里，不再散落在零碎工具之间。',
+      tone: 'script',
+      meta: [
+        { label: '重点', value: '分集与节奏' },
+        { label: '历史', value: '版本可追踪' },
+      ],
+    },
+    {
+      badge: '03',
+      eyebrow: '分镜',
+      title: '让 shot plan 和提示词包始终一起出现',
+      description: '分镜不再只是单独文本，而是把镜头、shot plan 和 Seedance prompt pack 作为同一次生产结果呈现。',
+      tone: 'storyboard',
+      meta: [
+        { label: '输出', value: '分镜 + 提示词包' },
+        { label: '衔接', value: 'Seedance 流程' },
+      ],
+    },
+    {
+      badge: '04',
+      eyebrow: '交付',
+      title: '导出时仍然保留来源关系',
+      description: '到导出和交付复看阶段，产物依然能回溯到它对应的来源与版本链。',
+      tone: 'delivery',
+      meta: [
+        { label: '导出', value: 'Markdown、JSON、文本' },
+        { label: '交接', value: '脉络不丢失' },
+      ],
+    },
+  ];
 }
 
 function formatUsd(amountCents: number) {

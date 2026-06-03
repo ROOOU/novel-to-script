@@ -65,4 +65,30 @@ describe('persistent platform store', () => {
       provider: 'paypal',
     });
   });
+
+  it('keeps the JSON store readable during concurrent file updates', async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'novelscript-store-'));
+    process.env.NOVELSCRIPT_STORE_PATH = path.join(tempDir, 'store.json');
+
+    vi.resetModules();
+    const { createPersistentPlatformRuntime, readPlatformStore } = await import('@/server/shared/platform/runtime');
+    const runtime = createPersistentPlatformRuntime();
+    const writers = Array.from({ length: 20 }, (_, index) =>
+      runtime.users.create({
+        email: `reader-${index}@example.com`,
+        displayName: `Reader ${index}`,
+        createdByUserId: null,
+      })
+    );
+    const readers = Array.from({ length: 40 }, async () => {
+      for (let index = 0; index < 5; index += 1) {
+        await readPlatformStore();
+      }
+    });
+
+    await Promise.all([...writers, ...readers]);
+
+    const stored = await readPlatformStore();
+    expect(stored.users).toHaveLength(20);
+  });
 });

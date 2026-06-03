@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   requireViewerResponse: vi.fn(),
   getPlatformRuntime: vi.fn(),
   createProjectGenerationJob: vi.fn(),
+  getServerLLMConfigError: vi.fn(),
 }));
 
 vi.mock('@/server/auth/http', () => ({
@@ -19,9 +20,17 @@ vi.mock('@/server/generation/service', () => ({
   createProjectGenerationJob: (...args: unknown[]) => mocks.createProjectGenerationJob(...args),
 }));
 
+vi.mock('@/lib/server-llm-config', () => ({
+  getServerLLMConfigError: (...args: unknown[]) => mocks.getServerLLMConfigError(...args),
+}));
+
 import { GET, POST } from '@/app/api/projects/[projectId]/jobs/route';
 
 describe('project jobs route', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireViewerResponse.mockResolvedValue({
@@ -29,9 +38,11 @@ describe('project jobs route', () => {
         organization: { id: 'org_1' },
         workspace: { id: 'ws_1' },
         user: { id: 'user_1' },
+        subscription: { planKey: 'free' },
       },
       response: null,
     });
+    mocks.getServerLLMConfigError.mockReturnValue(null);
     mocks.getPlatformRuntime.mockReturnValue({
       projects: {
         getById: vi.fn().mockResolvedValue({
@@ -109,6 +120,7 @@ describe('project jobs route', () => {
           organizationId: 'org_1',
           workspaceId: 'ws_1',
           projectId: 'proj_1',
+          generationJobId: 'job_script',
           kind: 'script',
         };
       }
@@ -119,6 +131,7 @@ describe('project jobs route', () => {
           organizationId: 'org_1',
           workspaceId: 'ws_1',
           projectId: 'proj_1',
+          generationJobId: 'job_script',
           kind: 'script',
         };
       }
@@ -176,6 +189,9 @@ describe('project jobs route', () => {
           scriptText: 'fallback script',
           visualStyle: 'cinematic',
         }),
+        metadata: {
+          upstreamJobId: 'job_script',
+        },
       })
     );
   });
@@ -370,6 +386,128 @@ describe('project jobs route', () => {
 
     expect(response.status).toBe(400);
     expect(mocks.createProjectGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects script-generation jobs before creation when the server lacks an LLM provider', async () => {
+    mocks.getServerLLMConfigError.mockReturnValue(
+      '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。'
+    );
+
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          kind: 'script-generation',
+          payload: {
+            text: '正文',
+            genre: 'urban',
+            config: {
+              genre: 'urban',
+              episodeCount: 1,
+              episodeDuration: '1:00-1:30',
+              style: 'dramatic',
+            },
+          },
+        }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1' }) }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。',
+    });
+    expect(mocks.createProjectGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it('rejects storyboard-generation jobs before creation when the server lacks an LLM provider', async () => {
+    mocks.getServerLLMConfigError.mockReturnValue(
+      '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。'
+    );
+
+    const runtime = mocks.getPlatformRuntime();
+    runtime.generationArtifacts.getById.mockResolvedValueOnce({
+      id: 'script_a',
+      organizationId: 'org_1',
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      kind: 'script',
+    });
+
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          kind: 'storyboard-generation',
+          payload: {
+            scriptArtifactIds: ['script_a'],
+          },
+        }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1' }) }
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: false,
+      error: '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。',
+    });
+    expect(mocks.createProjectGenerationJob).not.toHaveBeenCalled();
+  });
+
+  it('allows script-generation jobs in local dev fallback mode when the server lacks an LLM provider', async () => {
+    vi.stubEnv('NOVELSCRIPT_ENABLE_DEV_AUTH', 'true');
+    mocks.getServerLLMConfigError.mockReturnValue(
+      '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。'
+    );
+    mocks.createProjectGenerationJob.mockResolvedValue({
+      id: 'job_dev_fallback',
+      kind: 'script-generation',
+    });
+
+    const response = await POST(
+      new NextRequest('https://app.test/api/projects/proj_1/jobs', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          kind: 'script-generation',
+          payload: {
+            text: '正文',
+            genre: 'urban',
+            config: {
+              genre: 'urban',
+              episodeCount: 1,
+              episodeDuration: '1:00-1:30',
+              style: 'dramatic',
+            },
+          },
+        }),
+      }),
+      { params: Promise.resolve({ projectId: 'proj_1' }) }
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      job: {
+        id: 'job_dev_fallback',
+        kind: 'script-generation',
+      },
+    });
+    expect(mocks.createProjectGenerationJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'script-generation',
+      })
+    );
   });
 
   it('rejects script-generation payloads with missing config', async () => {

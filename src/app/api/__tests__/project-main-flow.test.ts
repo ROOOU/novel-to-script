@@ -4,6 +4,11 @@ import path from 'node:path';
 import { NextRequest } from 'next/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactRelation, GenerationArtifact, GenerationJob } from '@/server/shared/platform/domain';
+import type { ScriptGenerationExecutionOptions } from '@/server/script-generation/application/types';
+import type { StoryboardGenerationExecutionOptions } from '@/server/storyboard/application/types';
+
+type ScriptGenerationInput = ScriptGenerationExecutionOptions;
+type StoryboardGenerationInput = StoryboardGenerationExecutionOptions;
 
 const mocks = vi.hoisted(() => ({
   requireViewerResponse: vi.fn(),
@@ -108,7 +113,7 @@ describe('project API main flow integration', () => {
     process.env.LLM_API_KEY = 'sk-test';
     delete process.env.REDIS_URL;
 
-    mocks.runScriptGeneration.mockImplementation(async (input: any) => {
+    mocks.runScriptGeneration.mockImplementation(async (input: ScriptGenerationInput) => {
       await input.onArtifact?.({
         kind: 'analysis',
         title: '小说分析',
@@ -147,7 +152,7 @@ describe('project API main flow integration', () => {
       await input.onProgress?.({ progress: 100, currentStep: 'done', outputSummary: 'Generated 1 episodes' });
     });
 
-    mocks.runStoryboardGeneration.mockImplementation(async (input: any) => {
+    mocks.runStoryboardGeneration.mockImplementation(async (input: StoryboardGenerationInput) => {
       await input.onArtifact?.({
         kind: 'storyboard',
         title: '分镜提示词',
@@ -369,7 +374,7 @@ describe('project API main flow integration', () => {
     process.env.LLM_API_KEY = 'sk-test';
     delete process.env.REDIS_URL;
 
-    mocks.runScriptGeneration.mockImplementation(async (input: any) => {
+    mocks.runScriptGeneration.mockImplementation(async (input: ScriptGenerationInput) => {
       await input.onArtifact?.({
         kind: 'analysis',
         title: '小说分析',

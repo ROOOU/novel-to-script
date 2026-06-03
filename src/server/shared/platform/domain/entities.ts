@@ -26,10 +26,12 @@ export type SourceDocumentKind =
   | 'reference'
   | 'export';
 export type GenerationJobKind =
+  | 'asset-upload'
   | 'script-generation'
   | 'storyboard-generation'
   | 'export-generation'
-  | 'analysis-generation';
+  | 'analysis-generation'
+  | 'video-generation';
 export type GenerationJobStatus =
   | 'queued'
   | 'running'
@@ -50,6 +52,8 @@ export type GenerationArtifactKind =
   | 'storyboard'
   | 'shot_plan'
   | 'prompt_pack'
+  | 'reference_image'
+  | 'video_clip'
   | 'export'
   | 'prompt';
 export type GenerationArtifactFormat =
@@ -59,6 +63,10 @@ export type GenerationArtifactFormat =
   | 'text/markdown'
   | 'application/pdf'
   | 'application/zip'
+  | 'image/png'
+  | 'image/jpeg'
+  | 'image/webp'
+  | 'video/mp4'
   | 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 export type UsageEventKind =
   | 'llm_request'

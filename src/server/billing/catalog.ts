@@ -234,11 +234,16 @@ export function buildCreditPackPurchase(
 }
 
 export function estimateJobCredits(
-  kind: 'script-generation' | 'storyboard-generation',
+  kind: 'script-generation' | 'storyboard-generation' | 'video-generation',
   options: {
     episodeCount?: number;
   } = {}
 ): number {
+  if (kind === 'video-generation') {
+    const parsed = Number(process.env.NOVELSCRIPT_VIDEO_JOB_CREDITS ?? '0');
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : 0;
+  }
+
   if (kind === 'storyboard-generation') {
     return Math.max(8, (options.episodeCount ?? 1) * 8);
   }

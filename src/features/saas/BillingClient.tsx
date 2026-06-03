@@ -1,6 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  WorkspaceCapabilityCard,
+  WorkspaceFeedback,
+  WorkspaceHero,
+  WorkspaceListRow,
+  WorkspaceListRowMeta,
+  WorkspaceMetricCard,
+  WorkspaceMiniList,
+  WorkspaceNoteCard,
+  WorkspaceStatusPill,
+} from '@/components/WorkspaceUI';
 import type {
   CreditAccount,
   CreditLedgerEntry,
@@ -84,23 +95,116 @@ export function BillingClient({
     return null;
   });
   const handledCheckoutRef = useRef(false);
+  const usageJobCount = usage.byTaskType.reduce((total, entry) => total + entry.jobCount, 0);
+  const latestOrder =
+    [...paymentOrders].sort(
+      (left, right) =>
+        new Date(right.paidAt ?? right.createdAt).getTime() - new Date(left.paidAt ?? left.createdAt).getTime()
+    )[0] ?? null;
+  const overviewCards =
+    locale === 'en-US'
+      ? [
+          {
+            badge: 'Plan',
+            eyebrow: 'Subscription',
+            title: 'Keep plan state visible before usage details',
+            description: 'Billing works best when plan, provider, and cadence can be checked without digging into orders.',
+            tone: 'delivery',
+            meta: [
+              { label: 'Status', value: formatEnumLabel(subscription?.status ?? 'active') },
+              { label: 'Interval', value: formatBillingIntervalLabel(locale, subscription?.billingInterval) },
+              { label: 'Provider', value: (subscription?.provider ?? 'paypal').toUpperCase() },
+            ],
+          },
+          {
+            badge: 'Credits',
+            eyebrow: 'Balance',
+            title: 'Track available, reserved, and lifetime movement',
+            description: 'The credit account should read like a production ledger, not a black box.',
+            tone: 'source',
+            meta: [
+              { label: 'Available', value: `${creditAccount?.availableCredits ?? 0}` },
+              { label: 'Reserved', value: `${creditAccount?.reservedCredits ?? 0}` },
+              { label: 'Consumed', value: `${creditAccount?.consumedCreditsTotal ?? 0}` },
+            ],
+          },
+          {
+            badge: 'Usage',
+            eyebrow: 'This month',
+            title: 'See which projects and tasks used the budget',
+            description: 'Usage is easier to trust when credits, jobs, and project spread are surfaced together.',
+            tone: 'script',
+            meta: [
+              { label: 'Consumed', value: formatUsageCredits(locale, usage.totalCreditsConsumed, labels.usageCreditsUnit) },
+              { label: 'Projects', value: `${usage.byProject.length}` },
+              { label: 'Jobs', value: `${usageJobCount}` },
+            ],
+          },
+          {
+            badge: 'Orders',
+            eyebrow: 'Payments',
+            title: 'Keep the last payment in the same summary layer',
+            description: 'The newest order should be glanceable before someone needs the deeper ledger below.',
+            tone: 'storyboard',
+            meta: [
+              { label: 'Latest', value: latestOrder ? formatEnumLabel(latestOrder.status) : 'No orders yet' },
+              { label: 'Amount', value: latestOrder ? formatOrderAmount(locale, latestOrder) : '-' },
+              { label: 'Paid at', value: formatBillingDate(locale, latestOrder?.paidAt ?? latestOrder?.createdAt) },
+            ],
+          },
+        ]
+      : [
+          {
+            badge: '计划',
+            eyebrow: '订阅',
+            title: '先把计划状态放到最前面',
+            description: '订阅方案、提供方和计费周期应该先看见，再进入订单和流水细节。',
+            tone: 'delivery',
+            meta: [
+              { label: '状态', value: formatEnumLabel(subscription?.status ?? 'active') },
+              { label: '周期', value: formatBillingIntervalLabel(locale, subscription?.billingInterval) },
+              { label: '渠道', value: (subscription?.provider ?? 'paypal').toUpperCase() },
+            ],
+          },
+          {
+            badge: '积分',
+            eyebrow: '余额',
+            title: '把可用、预留和累计变化拆开看',
+            description: '积分账户更像一张生产流水表，余额、预留和累计消耗需要同时可追踪。',
+            tone: 'source',
+            meta: [
+              { label: '可用', value: `${creditAccount?.availableCredits ?? 0}` },
+              { label: '预留', value: `${creditAccount?.reservedCredits ?? 0}` },
+              { label: '累计消耗', value: `${creditAccount?.consumedCreditsTotal ?? 0}` },
+            ],
+          },
+          {
+            badge: '用量',
+            eyebrow: '本月',
+            title: '直接看到积分花在什么地方',
+            description: '把本月积分、任务数和涉及项目一起摆出来，消耗去向会更清楚。',
+            tone: 'script',
+            meta: [
+              { label: '已消耗', value: formatUsageCredits(locale, usage.totalCreditsConsumed, labels.usageCreditsUnit) },
+              { label: '项目', value: `${usage.byProject.length}` },
+              { label: '任务', value: `${usageJobCount}` },
+            ],
+          },
+          {
+            badge: '订单',
+            eyebrow: '支付',
+            title: '最近一笔支付放在同一层摘要里',
+            description: '先快速确认最近订单状态、金额和到账时间，再往下看完整流水。',
+            tone: 'storyboard',
+            meta: [
+              { label: '最近状态', value: latestOrder ? formatEnumLabel(latestOrder.status) : '暂无订单' },
+              { label: '金额', value: latestOrder ? formatOrderAmount(locale, latestOrder) : '-' },
+              { label: '时间', value: formatBillingDate(locale, latestOrder?.paidAt ?? latestOrder?.createdAt) },
+            ],
+          },
+        ];
 
-  useEffect(() => {
-    if (!initialCheckout?.status || handledCheckoutRef.current) {
-      return;
-    }
-
-    handledCheckoutRef.current = true;
-
-    if (initialCheckout.status === 'cancelled') {
-      clearCheckoutQuery();
-      return;
-    }
-
-    void reconcileCheckout();
-  }, [initialCheckout]);
-
-  async function reconcileCheckout() {
+  const reconcileCheckout = useCallback(async () => {
     if (
       initialCheckout?.purchaseKind === 'credit-pack' &&
       (initialCheckout.paymentOrderId || initialCheckout.providerOrderId)
@@ -175,77 +279,108 @@ export function BillingClient({
             : 'PayPal 支付完成，积分已到账。',
     });
     clearCheckoutQuery();
-  }
+  }, [initialCheckout, locale]);
+
+  useEffect(() => {
+    if (!initialCheckout?.status || handledCheckoutRef.current) {
+      return;
+    }
+
+    handledCheckoutRef.current = true;
+
+    if (initialCheckout.status === 'cancelled') {
+      clearCheckoutQuery();
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void reconcileCheckout();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [initialCheckout, reconcileCheckout]);
 
   return (
     <div className="workspace-shell stack-gap-lg">
-      <section className="workspace-hero billing-hero">
-        <div className="projects-hero-copy">
-          <span className="eyebrow">{locale === 'en-US' ? 'Billing' : '账单'}</span>
-          <h1>{labels.title}</h1>
-          <p>{labels.subtitle}</p>
-        </div>
-        <div className="projects-hero-aside">
-          <div className="metric-card metric-card-matcha">
-            <span>{locale === 'en-US' ? 'Available' : '可用积分'}</span>
-            <strong>{creditAccount?.availableCredits ?? 0}</strong>
-          </div>
-          <div className="metric-card metric-card-blueberry">
-            <span>PayPal</span>
-            <strong>{subscription?.planKey ?? 'free'}</strong>
-          </div>
-        </div>
-      </section>
+      <WorkspaceHero
+        className="billing-hero"
+        eyebrow={locale === 'en-US' ? 'Billing' : '账单'}
+        title={labels.title}
+        description={labels.subtitle}
+        tags={[
+          <span key="plan" className="chip chip-count">
+            {formatPlanLabel(subscription?.planKey)}
+          </span>,
+          <span key="projects" className="chip chip-soft">
+            {locale === 'en-US'
+              ? `${usage.byProject.length} active projects`
+              : `${usage.byProject.length} 个项目有消耗`}
+          </span>,
+          latestOrder ? (
+            <span key="latest" className="chip">
+              {locale === 'en-US'
+                ? `Latest payment ${formatBillingDate(locale, latestOrder.paidAt ?? latestOrder.createdAt)}`
+                : `最近支付 ${formatBillingDate(locale, latestOrder.paidAt ?? latestOrder.createdAt)}`}
+            </span>
+          ) : null,
+        ].filter(Boolean)}
+        aside={
+          <>
+            <WorkspaceMetricCard
+              tone="matcha"
+              label={locale === 'en-US' ? 'Available' : '可用积分'}
+              value={creditAccount?.availableCredits ?? 0}
+            />
+            <WorkspaceMetricCard
+              tone="blueberry"
+              label={locale === 'en-US' ? 'Plan' : '方案'}
+              value={formatPlanLabel(subscription?.planKey)}
+            />
+            <WorkspaceMetricCard
+              tone="slushie"
+              label={labels.usageThisMonth}
+              value={formatUsageCredits(locale, usage.totalCreditsConsumed, labels.usageCreditsUnit)}
+            />
+          </>
+        }
+      />
 
       {checkoutNotice ? (
-        <section className={`card stack-gap-sm status-panel status-panel-${checkoutNotice.tone}`}>
-          <strong>PayPal</strong>
-          <p>{checkoutNotice.message}</p>
-        </section>
+        <WorkspaceFeedback tone={checkoutNotice.tone} title="PayPal">
+          {checkoutNotice.message}
+        </WorkspaceFeedback>
       ) : null}
 
-      <section className="workspace-grid">
-        <article className="card stack-gap">
-          <div>
-            <small>{labels.currentPlan}</small>
-            <h2>{subscription?.planKey ?? 'free'}</h2>
-            <p>{subscription?.status ?? 'active'}</p>
-          </div>
-          <div>
-            <small>{labels.creditsBalance}</small>
-            <h2>{creditAccount?.availableCredits ?? 0}</h2>
-          </div>
-          <div className="timeline-meta-grid timeline-meta-grid-secondary">
-            <div className="timeline-meta-card">
-              <span>{labels.reservedCredits}</span>
-              <strong>{creditAccount?.reservedCredits ?? 0}</strong>
-            </div>
-            <div className="timeline-meta-card">
-              <span>{labels.grantedTotal}</span>
-              <strong>{creditAccount?.grantedCreditsTotal ?? 0}</strong>
-            </div>
-            <div className="timeline-meta-card">
-              <span>{labels.consumedTotal}</span>
-              <strong>{creditAccount?.consumedCreditsTotal ?? 0}</strong>
-            </div>
-          </div>
-          <div className="stack-gap-sm">
-            <p className="helper-text">{`${labels.openPortal}: ${subscription?.provider ?? 'paypal'}`}</p>
-            <p className="helper-text">{labels.manualMessage}</p>
-          </div>
-        </article>
+      <section className="workspace-capability-grid">
+        {overviewCards.map((card) => (
+          <WorkspaceCapabilityCard
+            key={`${card.badge}-${card.tone}`}
+            tone={card.tone}
+            eyebrow={card.eyebrow}
+            title={card.title}
+            badge={card.badge}
+            description={card.description}
+            meta={card.meta.map((item) => ({
+              key: `${card.badge}-${item.label}`,
+              label: item.label,
+              value: item.value,
+            }))}
+          />
+        ))}
+      </section>
 
+      <section className="workspace-grid">
         <article className="card stack-gap billing-usage-card">
-          <div className="list-row">
+          <WorkspaceListRow>
             <div className="stack-gap-sm">
               <h2>{labels.usageTitle}</h2>
               <p className="helper-text">{labels.usageSubtitle}</p>
             </div>
-            <div className="list-row-meta">
+            <WorkspaceListRowMeta>
               <span>{labels.usageThisMonth}</span>
               <strong>{formatUsageCredits(locale, usage.totalCreditsConsumed, labels.usageCreditsUnit)}</strong>
-            </div>
-          </div>
+            </WorkspaceListRowMeta>
+          </WorkspaceListRow>
 
           {usage.totalCreditsConsumed === 0 ? (
             <p className="helper-text">{labels.usageEmpty}</p>
@@ -306,26 +441,64 @@ export function BillingClient({
           )}
         </article>
 
+        <WorkspaceNoteCard
+          tone="lemon"
+          eyebrow={locale === 'en-US' ? 'Plan ledger' : '计划概览'}
+          title={formatPlanLabel(subscription?.planKey)}
+          description={
+            locale === 'en-US'
+              ? `${formatEnumLabel(subscription?.status ?? 'active')} via ${(subscription?.provider ?? 'paypal').toUpperCase()}`
+              : `${formatEnumLabel(subscription?.status ?? 'active')} · ${(subscription?.provider ?? 'paypal').toUpperCase()}`
+          }
+          className="stack-gap billing-summary-card"
+        >
+          <WorkspaceMiniList
+            items={[
+              {
+                key: 'available',
+                label: labels.creditsBalance,
+                value: creditAccount?.availableCredits ?? 0,
+              },
+              {
+                key: 'reserved',
+                label: labels.reservedCredits,
+                value: creditAccount?.reservedCredits ?? 0,
+              },
+              {
+                key: 'granted',
+                label: labels.grantedTotal,
+                value: creditAccount?.grantedCreditsTotal ?? 0,
+              },
+              {
+                key: 'consumed',
+                label: labels.consumedTotal,
+                value: creditAccount?.consumedCreditsTotal ?? 0,
+              },
+            ]}
+          />
+          <div className="stack-gap-sm">
+            <p className="helper-text">{`${labels.openPortal}: ${(subscription?.provider ?? 'paypal').toUpperCase()}`}</p>
+            <p className="helper-text">{labels.manualMessage}</p>
+          </div>
+        </WorkspaceNoteCard>
+
         <article className="card stack-gap">
           <h2>{labels.orders}</h2>
           <div className="stack-gap">
             {paymentOrders.map((order) => (
-              <div key={order.id} className="list-row">
+              <WorkspaceListRow key={order.id}>
                 <div>
-                  <strong>{order.purchaseKind}</strong>
+                  <strong>{formatPurchaseKindLabel(locale, order.purchaseKind)}</strong>
                   <p>{order.planKey ?? order.creditPackKey ?? order.id}</p>
                   <p className="helper-text">{order.providerOrderId ?? order.id}</p>
                 </div>
-                <div className="list-row-meta">
-                  <span>{order.status}</span>
-                  <span>
-                    {new Intl.NumberFormat(locale, {
-                      style: 'currency',
-                      currency: order.currency,
-                    }).format(order.amountCents / 100)}
-                  </span>
-                </div>
-              </div>
+                <WorkspaceListRowMeta>
+                  <WorkspaceStatusPill tone={resolveBillingStatusTone(order.status)}>
+                    {formatEnumLabel(order.status)}
+                  </WorkspaceStatusPill>
+                  <span>{formatOrderAmount(locale, order)}</span>
+                </WorkspaceListRowMeta>
+              </WorkspaceListRow>
             ))}
             {paymentOrders.length === 0 ? <p className="helper-text">{labels.noOrders}</p> : null}
           </div>
@@ -335,16 +508,18 @@ export function BillingClient({
           <h2>{labels.creditActivity}</h2>
           <div className="stack-gap">
             {ledgerEntries.slice(0, 6).map((entry) => (
-              <div key={entry.id} className="list-row">
+              <WorkspaceListRow key={entry.id}>
                 <div>
                   <strong>{entry.kind}</strong>
                   <p>{entry.note ?? (locale === 'en-US' ? 'No note' : '无备注')}</p>
                 </div>
-                <div className="list-row-meta">
-                  <span>{entry.deltaCredits > 0 ? `+${entry.deltaCredits}` : entry.deltaCredits}</span>
+                <WorkspaceListRowMeta>
+                  <WorkspaceStatusPill tone={resolveLedgerDeltaTone(entry.deltaCredits)}>
+                    {entry.deltaCredits > 0 ? `+${entry.deltaCredits}` : entry.deltaCredits}
+                  </WorkspaceStatusPill>
                   <span>{entry.balanceAfter}</span>
-                </div>
-              </div>
+                </WorkspaceListRowMeta>
+              </WorkspaceListRow>
             ))}
             {ledgerEntries.length === 0 ? <p className="helper-text">{labels.noCreditActivity}</p> : null}
           </div>
@@ -378,6 +553,85 @@ function formatUsageShare(locale: SupportedLocale, share: number, label: string)
     maximumFractionDigits: 0,
   }).format(share);
   return `${label}: ${percentage}`;
+}
+
+function formatBillingIntervalLabel(locale: SupportedLocale, interval?: Subscription['billingInterval'] | null) {
+  if (!interval) {
+    return locale === 'en-US' ? 'Monthly' : '月付';
+  }
+
+  if (interval === 'annual') {
+    return locale === 'en-US' ? 'Annual' : '年付';
+  }
+
+  return locale === 'en-US' ? 'Monthly' : '月付';
+}
+
+function formatBillingDate(locale: SupportedLocale, value?: string | null) {
+  if (!value) {
+    return locale === 'en-US' ? 'Not available' : '暂无';
+  }
+
+  return new Date(value).toLocaleDateString(locale);
+}
+
+function formatEnumLabel(value: string) {
+  return value.replace(/[-_]/g, ' ');
+}
+
+function formatPlanLabel(planKey?: string | null) {
+  if (!planKey) {
+    return 'free';
+  }
+
+  return planKey.replace(/[-_]/g, ' ');
+}
+
+function formatPurchaseKindLabel(locale: SupportedLocale, purchaseKind: PaymentOrder['purchaseKind']) {
+  if (purchaseKind === 'subscription') {
+    return locale === 'en-US' ? 'Subscription' : '订阅';
+  }
+
+  return locale === 'en-US' ? 'Credit pack' : '积分包';
+}
+
+function formatOrderAmount(locale: SupportedLocale, order: PaymentOrder) {
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: order.currency,
+  }).format(order.amountCents / 100);
+}
+
+function resolveBillingStatusTone(value: string) {
+  switch (value) {
+    case 'paid':
+    case 'active':
+      return 'success';
+    case 'pending':
+    case 'queued':
+      return 'pending';
+    case 'processing':
+    case 'running':
+      return 'running';
+    case 'failed':
+    case 'cancelled':
+    case 'expired':
+      return 'danger';
+    default:
+      return 'muted';
+  }
+}
+
+function resolveLedgerDeltaTone(value: number) {
+  if (value > 0) {
+    return 'success';
+  }
+
+  if (value < 0) {
+    return 'danger';
+  }
+
+  return 'muted';
 }
 
 function resolveTaskTypeLabel(

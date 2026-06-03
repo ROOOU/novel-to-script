@@ -1,10 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getPlatformRuntime: vi.fn(),
   resolvePlatformLLMConfig: vi.fn(),
   runScriptGeneration: vi.fn(),
   runStoryboardGeneration: vi.fn(),
+  runScriptGenerationDevFallback: vi.fn(),
+  runStoryboardGenerationDevFallback: vi.fn(),
+  shouldUseDevGenerationFallback: vi.fn(),
   reserveJobCredits: vi.fn(),
   captureJobCredits: vi.fn(),
   releaseJobCredits: vi.fn(),
@@ -24,6 +27,16 @@ vi.mock('@/server/storyboard/application/run-storyboard-generation', () => ({
   runStoryboardGeneration: (...args: unknown[]) => mocks.runStoryboardGeneration(...args),
 }));
 
+vi.mock('@/server/generation/dev-fallback', () => ({
+  DEV_FALLBACK_MODEL_NAME: 'local-dev-fallback',
+  runScriptGenerationDevFallback: (...args: unknown[]) =>
+    mocks.runScriptGenerationDevFallback(...args),
+  runStoryboardGenerationDevFallback: (...args: unknown[]) =>
+    mocks.runStoryboardGenerationDevFallback(...args),
+  shouldUseDevGenerationFallback: (...args: unknown[]) =>
+    mocks.shouldUseDevGenerationFallback(...args),
+}));
+
 vi.mock('@/server/billing/service', () => ({
   reserveJobCredits: (...args: unknown[]) => mocks.reserveJobCredits(...args),
   captureJobCredits: (...args: unknown[]) => mocks.captureJobCredits(...args),
@@ -34,17 +47,245 @@ vi.mock('@/server/generation/queue', () => ({
   getProjectGenerationScheduler: () => mocks.getProjectGenerationScheduler(),
 }));
 
-import { processPersistedGenerationJob } from '@/server/generation/processor';
+import { createPersistedGenerationJob, processPersistedGenerationJob } from '@/server/generation/processor';
 
 describe('processPersistedGenerationJob', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.resolvePlatformLLMConfig.mockReturnValue({ config: { modelName: 'test-model' } });
+    mocks.shouldUseDevGenerationFallback.mockReturnValue(false);
     mocks.getProjectGenerationScheduler.mockReturnValue({
       schedule: vi.fn().mockResolvedValue(undefined),
       close: vi.fn().mockResolvedValue(undefined),
       getMode: vi.fn().mockReturnValue('inline'),
     });
+  });
+
+  it('creates zero-credit script jobs in local dev fallback mode when no LLM provider is configured', async () => {
+    mocks.shouldUseDevGenerationFallback.mockReturnValue(true);
+
+    const createJob = vi.fn().mockResolvedValue(
+      buildJob({
+        id: 'job_dev',
+        kind: 'script-generation',
+        reservedCredits: 0,
+      })
+    );
+    const runtime = {
+      generationJobs: {
+        create: createJob,
+      },
+      projects: {
+        update: vi.fn().mockResolvedValue(undefined),
+      },
+    };
+
+    mocks.getPlatformRuntime.mockReturnValue(runtime);
+
+    const job = await createPersistedGenerationJob({
+      organizationId: 'org_1',
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      userId: 'user_1',
+      kind: 'script-generation',
+      body: {
+        text: '韩立在荒原边缘停步，察觉远处异动。',
+        genre: 'xianxia',
+        config: {
+          genre: 'xianxia',
+          episodeCount: 1,
+          episodeDuration: '1:00-1:30',
+          style: 'highEnergy',
+          includeDirectorNotes: true,
+        },
+      },
+    });
+
+    expect(job).toMatchObject({
+      id: 'job_dev',
+      reservedCredits: 0,
+    });
+    expect(createJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reservedCredits: 0,
+      })
+    );
+    expect(mocks.reserveJobCredits).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationJobId: 'job_dev',
+        credits: 0,
+      })
+    );
+  });
+
+  it('runs the script pipeline through local dev fallback artifacts when no LLM provider is configured', async () => {
+    mocks.shouldUseDevGenerationFallback.mockReturnValue(true);
+    mocks.resolvePlatformLLMConfig.mockReturnValue({
+      config: null,
+      error: '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。',
+    });
+
+    const job = buildJob({
+      id: 'job_script',
+      kind: 'script-generation',
+      reservedCredits: 0,
+      inputSnapshot: {
+        payload: {
+          text: '韩立在荒原边缘停步，察觉远处斗法异动。银月提醒他先观察局势，再决定是否介入。',
+          genre: 'xianxia',
+          config: {
+            genre: 'xianxia',
+            episodeCount: 1,
+            episodeDuration: '1:00-1:30',
+            style: 'highEnergy',
+            includeDirectorNotes: true,
+          },
+        },
+        metadata: {
+          pipelineMode: 'novel-to-storyboard',
+          storyboardPayload: {
+            visualStyle: 'cinematic realism',
+            colorTone: 'cold tone',
+          },
+        },
+      },
+    });
+    const project = { id: 'proj_1' };
+    let createdIndex = 0;
+    const createArtifact = vi.fn().mockImplementation(async (input: Record<string, unknown>) =>
+      buildArtifact({
+        id: `artifact_${createdIndex += 1}`,
+        generationJobId: job.id,
+        kind: input.kind,
+        format: input.format,
+        title: input.title,
+        content: input.content,
+        metadata: input.metadata ?? {},
+      })
+    );
+    const createJob = vi.fn().mockResolvedValue(
+      buildJob({
+        id: 'job_storyboard',
+        kind: 'storyboard-generation',
+        status: 'queued',
+        reservedCredits: 0,
+        inputSnapshot: {
+          payload: {
+            scriptArtifactIds: ['artifact_5'],
+            visualStyle: 'cinematic realism',
+            colorTone: 'cold tone',
+          },
+          metadata: {
+            pipelineMode: 'novel-to-storyboard',
+            upstreamJobId: 'job_script',
+          },
+        },
+      })
+    );
+    const scheduler = {
+      schedule: vi.fn().mockResolvedValue(undefined),
+      close: vi.fn().mockResolvedValue(undefined),
+      getMode: vi.fn().mockReturnValue('inline'),
+    };
+
+    mocks.getProjectGenerationScheduler.mockReturnValue(scheduler);
+    mocks.runScriptGenerationDevFallback.mockImplementation(
+      async ({ onArtifact }: { onArtifact: (artifact: unknown) => Promise<void> }) => {
+        await onArtifact({
+          kind: 'analysis',
+          title: 'Analysis',
+          format: 'application/json',
+          content: '{}',
+        });
+        await onArtifact({
+          kind: 'story_bible',
+          title: 'Story Bible',
+          format: 'application/json',
+          content: '{}',
+        });
+        await onArtifact({
+          kind: 'outline',
+          title: 'Outline',
+          format: 'application/json',
+          content: '[]',
+        });
+        await onArtifact({
+          kind: 'scene_cards',
+          title: 'Scene Cards',
+          format: 'application/json',
+          content: '[]',
+        });
+        await onArtifact({
+          kind: 'script',
+          title: 'Episode 1',
+          format: 'text/plain',
+          content: 'script body',
+          metadata: { episode: 1, devFallback: true },
+        });
+      }
+    );
+
+    const runtime = {
+      generationJobs: {
+        getById: vi.fn().mockResolvedValue(job),
+        create: createJob,
+        update: vi.fn().mockResolvedValue(job),
+        markRunning: vi.fn().mockResolvedValue(undefined),
+        markSucceeded: vi.fn().mockResolvedValue(undefined),
+        markFailed: vi.fn().mockResolvedValue(undefined),
+      },
+      projects: {
+        getById: vi.fn().mockResolvedValue(project),
+        update: vi.fn().mockResolvedValue(undefined),
+      },
+      subscriptions: {
+        getCurrentByOrganizationId: vi.fn().mockResolvedValue({ planKey: 'creator' }),
+      },
+      generationArtifacts: {
+        create: createArtifact,
+      },
+      artifactRelations: {
+        createMany: vi.fn().mockResolvedValue([]),
+      },
+      usageMeter: {
+        record: vi.fn(),
+      },
+    };
+    mocks.getPlatformRuntime.mockReturnValue(runtime);
+
+    await processPersistedGenerationJob(job.id);
+
+    expect(runtime.generationJobs.update).toHaveBeenCalledWith(
+      'job_script',
+      expect.objectContaining({
+        modelName: 'local-dev-fallback',
+      })
+    );
+    expect(mocks.runScriptGeneration).not.toHaveBeenCalled();
+    expect(mocks.runScriptGenerationDevFallback).toHaveBeenCalledTimes(1);
+    expect(createArtifact).toHaveBeenCalledTimes(5);
+    expect(createArtifact).toHaveBeenNthCalledWith(
+      5,
+      expect.objectContaining({
+        kind: 'script',
+      })
+    );
+    expect(createJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reservedCredits: 0,
+        kind: 'storyboard-generation',
+        inputSnapshot: expect.objectContaining({
+          payload: expect.objectContaining({
+            scriptArtifactIds: ['artifact_5'],
+          }),
+        }),
+      })
+    );
+    expect(scheduler.schedule).toHaveBeenCalledWith('job_storyboard');
   });
 
   it('schedules the pipeline storyboard follow-up job instead of running it inline', async () => {

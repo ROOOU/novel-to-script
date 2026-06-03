@@ -5,6 +5,11 @@ import { requireViewerResponse } from '@/server/auth/http';
 import { getPlatformRuntime } from '@/server/shared/platform';
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
 import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
+import type { VideoGenerationRequest } from '@/features/video-generation/contracts';
+import { findStoryboardShotById, parseStoryboardShotsFromContent } from '@/lib/storyboard-shots';
+import { getServerLLMConfigError } from '@/lib/server-llm-config';
+import { shouldUseDevGenerationFallback } from '@/server/generation/dev-fallback';
+import { isVideoGenerationEnabled } from '@/server/video-generation/config';
 import { createJobSchema } from './schema';
 
 export const maxDuration = 300;
@@ -62,21 +67,42 @@ export async function POST(
 
   try {
     const body = createJobSchema.parse(await request.json());
-    const normalizedPayload =
+    const normalizedStoryboard =
       body.kind === 'storyboard-generation'
         ? await normalizeStoryboardPayload({
             organizationId: viewer.organization.id,
             projectId,
             payload: body.payload,
           })
-        : body.payload;
+        : null;
+    const normalizedPayload =
+      normalizedStoryboard?.payload ??
+      (body.kind === 'video-generation'
+        ? await normalizeVideoPayload({
+            organizationId: viewer.organization.id,
+            projectId,
+            payload: body.payload,
+          })
+        : body.payload);
+    const llmConfigError =
+      body.kind === 'video-generation' ? null : getServerLLMConfigError();
+    if (
+      llmConfigError &&
+      !shouldUseDevGenerationFallback({
+        kind: body.kind,
+        llmConfigError,
+      })
+    ) {
+      throw new Error(llmConfigError);
+    }
     const job = await createProjectGenerationJob({
       organizationId: viewer.organization.id,
       workspaceId: viewer.workspace.id,
       projectId,
       userId: viewer.user.id,
       kind: body.kind,
-      body: normalizedPayload as ScriptGenerationRequest | StoryboardGenerateRequestV2,
+      body: normalizedPayload as ScriptGenerationRequest | StoryboardGenerateRequestV2 | VideoGenerationRequest,
+      metadata: normalizedStoryboard?.metadata,
     });
     return NextResponse.json({
       ok: true,
@@ -93,6 +119,101 @@ export async function POST(
       { status }
     );
   }
+}
+
+async function normalizeVideoPayload(input: {
+  organizationId: string;
+  projectId: string;
+  payload: VideoGenerationRequest;
+}) {
+  if (!isVideoGenerationEnabled()) {
+    throw new Error('VIDEO_GENERATION_DISABLED');
+  }
+
+  const runtime = getPlatformRuntime();
+  const shotPlanArtifact = await runtime.generationArtifacts.getById(input.payload.shotPlanArtifactId);
+  if (!shotPlanArtifact) {
+    throw new Error(`VIDEO_SHOT_PLAN_NOT_FOUND:${input.payload.shotPlanArtifactId}`);
+  }
+
+  if (
+    shotPlanArtifact.organizationId !== input.organizationId ||
+    shotPlanArtifact.projectId !== input.projectId
+  ) {
+    throw new Error(`VIDEO_SHOT_PLAN_NOT_IN_PROJECT:${input.payload.shotPlanArtifactId}`);
+  }
+
+  if (shotPlanArtifact.kind !== 'shot_plan') {
+    throw new Error(`VIDEO_SHOT_PLAN_KIND_INVALID:${input.payload.shotPlanArtifactId}`);
+  }
+
+  const shots = parseStoryboardShotsFromContent(shotPlanArtifact.content);
+  const shot = findStoryboardShotById(shots, input.payload.shotId);
+  if (!shot) {
+    throw new Error(`VIDEO_SHOT_NOT_FOUND:${input.payload.shotId}`);
+  }
+
+  const promptOverride = input.payload.promptOverride?.trim();
+  if (!promptOverride && !shot.videoPrompt.trim()) {
+    throw new Error('VIDEO_PROMPT_REQUIRED');
+  }
+
+  const referenceImageArtifactIds = Array.from(
+    new Set((input.payload.referenceImageArtifactIds ?? []).map((artifactId) => artifactId.trim()).filter(Boolean))
+  );
+  if (referenceImageArtifactIds.length > 3) {
+    throw new Error('VIDEO_REFERENCE_IMAGE_LIMIT_EXCEEDED');
+  }
+
+  const firstFrameArtifactId = input.payload.firstFrameArtifactId?.trim();
+  const lastFrameArtifactId = input.payload.lastFrameArtifactId?.trim();
+  if ((firstFrameArtifactId && !lastFrameArtifactId) || (!firstFrameArtifactId && lastFrameArtifactId)) {
+    throw new Error('VIDEO_FRAME_PAIR_REQUIRED');
+  }
+
+  const artifactIdsToValidate = Array.from(
+    new Set([
+      ...referenceImageArtifactIds,
+      ...(firstFrameArtifactId ? [firstFrameArtifactId] : []),
+      ...(lastFrameArtifactId ? [lastFrameArtifactId] : []),
+    ])
+  );
+
+  if (artifactIdsToValidate.length > 0) {
+    const artifacts = await Promise.all(
+      artifactIdsToValidate.map(async (artifactId) => ({
+        artifactId,
+        artifact: await runtime.generationArtifacts.getById(artifactId),
+      }))
+    );
+
+    for (const { artifactId, artifact } of artifacts) {
+      if (!artifact) {
+        throw new Error(`VIDEO_REFERENCE_IMAGE_NOT_FOUND:${artifactId}`);
+      }
+
+      if (
+        artifact.organizationId !== input.organizationId ||
+        artifact.projectId !== input.projectId
+      ) {
+        throw new Error(`VIDEO_REFERENCE_IMAGE_NOT_IN_PROJECT:${artifactId}`);
+      }
+
+      if (artifact.kind !== 'reference_image') {
+        throw new Error(`VIDEO_REFERENCE_IMAGE_KIND_INVALID:${artifactId}`);
+      }
+    }
+  }
+
+  return {
+    shotPlanArtifactId: input.payload.shotPlanArtifactId,
+    shotId: input.payload.shotId.trim(),
+    ...(promptOverride ? { promptOverride } : {}),
+    ...(referenceImageArtifactIds.length > 0 ? { referenceImageArtifactIds } : {}),
+    ...(firstFrameArtifactId ? { firstFrameArtifactId } : {}),
+    ...(lastFrameArtifactId ? { lastFrameArtifactId } : {}),
+    ...(input.payload.aspectRatio ? { aspectRatio: input.payload.aspectRatio } : {}),
+  } satisfies VideoGenerationRequest;
 }
 
 async function normalizeStoryboardPayload(input: {
@@ -114,6 +235,7 @@ async function normalizeStoryboardPayload(input: {
   const hasArtifactSource =
     scriptArtifactIds.length > 0 ||
     (scope === 'selection' && selection.artifactIds.length > 0);
+  const sourceJobIds = new Set<string>();
 
   if (artifactIdsToValidate.length > 0) {
     const artifacts = await Promise.all(
@@ -135,6 +257,10 @@ async function normalizeStoryboardPayload(input: {
       if (artifact.kind !== 'script') {
         throw new Error(`SCRIPT_ARTIFACT_KIND_INVALID:${artifactId}`);
       }
+
+      if (artifact.generationJobId) {
+        sourceJobIds.add(artifact.generationJobId);
+      }
     }
   }
 
@@ -151,12 +277,18 @@ async function normalizeStoryboardPayload(input: {
   }
 
   return {
-    ...input.payload,
-    scope,
-    ...(scriptArtifactIds.length > 0 ? { scriptArtifactIds } : {}),
-    ...(scope === 'selection' ? { selection } : {}),
-    ...(scriptText ? { scriptText } : {}),
-  } satisfies StoryboardGenerateRequestV2;
+    payload: {
+      ...input.payload,
+      scope,
+      ...(scriptArtifactIds.length > 0 ? { scriptArtifactIds } : {}),
+      ...(scope === 'selection' ? { selection } : {}),
+      ...(scriptText ? { scriptText } : {}),
+    } satisfies StoryboardGenerateRequestV2,
+    metadata:
+      sourceJobIds.size === 1
+        ? { upstreamJobId: Array.from(sourceJobIds)[0] }
+        : undefined,
+  };
 }
 
 function normalizeArtifactIds(ids: string[] | null | undefined): string[] {

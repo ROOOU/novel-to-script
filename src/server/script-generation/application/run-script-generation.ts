@@ -13,7 +13,6 @@ import { buildSceneCards, buildStoryBible } from '@/server/story-engine/story-bi
 import {
   buildScriptUsageEvent,
   type ScriptGenerationExecutionOptions,
-  type ScriptGenerationProgressUpdate,
 } from './types';
 
 export function getScriptGenerationRequestError(

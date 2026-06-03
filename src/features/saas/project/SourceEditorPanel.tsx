@@ -5,9 +5,12 @@ import {
   GENRE_LABELS,
   GENRE_LABELS_EN,
   GENRE_VALUES,
+  type Genre,
   SCRIPT_STYLE_LABELS,
   SCRIPT_STYLE_LABELS_EN,
   SCRIPT_STYLE_VALUES,
+  type EpisodeDuration,
+  type ScriptStyle,
 } from '@/lib/types';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
@@ -30,10 +33,10 @@ interface SourceEditorPanelProps {
   };
   sourceTitle: string;
   sourceText: string;
-  genre: string;
+  genre: Genre;
   episodeCount: number;
-  episodeDuration: string;
-  style: string;
+  episodeDuration: EpisodeDuration;
+  style: ScriptStyle;
   message: string | null;
   saving: boolean;
   uploading: boolean;
@@ -42,10 +45,10 @@ interface SourceEditorPanelProps {
   pipelineActionLabel?: string;
   onSourceTitleChange: (value: string) => void;
   onSourceTextChange: (value: string) => void;
-  onGenreChange: (value: string) => void;
+  onGenreChange: (value: Genre) => void;
   onEpisodeCountChange: (value: number) => void;
-  onEpisodeDurationChange: (value: string) => void;
-  onStyleChange: (value: string) => void;
+  onEpisodeDurationChange: (value: EpisodeDuration) => void;
+  onStyleChange: (value: ScriptStyle) => void;
   onSaveSource: () => void;
   onUploadFile: (file: File) => Promise<void>;
   onRunScript: () => void;
@@ -126,7 +129,7 @@ export function SourceEditorPanel({
       <div className="form-grid">
         <label className="field">
           <span>{labels.genre}</span>
-          <select value={genre} onChange={(event) => onGenreChange(event.target.value)}>
+          <select value={genre} onChange={(event) => onGenreChange(event.target.value as Genre)}>
             {GENRE_VALUES.map((value) => (
               <option key={value} value={value}>
                 {genreLabels[value]}
@@ -140,7 +143,10 @@ export function SourceEditorPanel({
         </label>
         <label className="field">
           <span>{labels.episodeDuration}</span>
-          <select value={episodeDuration} onChange={(event) => onEpisodeDurationChange(event.target.value)}>
+          <select
+            value={episodeDuration}
+            onChange={(event) => onEpisodeDurationChange(event.target.value as EpisodeDuration)}
+          >
             <option value="1:00-1:30">1:00-1:30</option>
             <option value="1:30-2:00">1:30-2:00</option>
             <option value="2:00-3:00">2:00-3:00</option>
@@ -148,7 +154,7 @@ export function SourceEditorPanel({
         </label>
         <label className="field">
           <span>{labels.style}</span>
-          <select value={style} onChange={(event) => onStyleChange(event.target.value)}>
+          <select value={style} onChange={(event) => onStyleChange(event.target.value as ScriptStyle)}>
             {SCRIPT_STYLE_VALUES.map((value) => (
               <option key={value} value={value}>
                 {styleLabels[value]}

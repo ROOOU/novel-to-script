@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useAuth, useSignIn } from '@clerk/nextjs';
+import { WorkspaceFeedback } from '@/components/WorkspaceUI';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 interface GoogleOnlySignInButtonProps {
@@ -28,7 +29,6 @@ export function GoogleOnlySignInButton({
       return;
     }
 
-    setPending(true);
     redirectToCallback(callbackPath);
   }, [authLoaded, callbackPath, userId]);
 
@@ -82,7 +82,7 @@ export function GoogleOnlySignInButton({
           : buttonLabel}
       </button>
       <p>{hint}</p>
-      {error ? <p className="error-message">{error}</p> : null}
+      {error ? <WorkspaceFeedback tone="danger">{error}</WorkspaceFeedback> : null}
     </div>
   );
 }

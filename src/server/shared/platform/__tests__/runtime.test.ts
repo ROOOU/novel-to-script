@@ -45,6 +45,7 @@ describe('platform runtime', () => {
 
   it('tracks generation jobs in memory', async () => {
     const jobs = createInMemoryGenerationJobRepository();
+    const now = new Date().toISOString();
 
     const job = await jobs.create({
       organizationId: 'org_test',
@@ -58,7 +59,7 @@ describe('platform runtime', () => {
 
     expect(job.status).toBe('queued');
 
-    await jobs.markRunning(job.id, '2026-03-22T00:00:00.000Z', 'user_test');
+    await jobs.markRunning(job.id, now, 'user_test');
     expect((await jobs.getById(job.id))?.status).toBe('running');
 
     await jobs.markSucceeded(job.id, {
@@ -95,6 +96,7 @@ describe('platform runtime', () => {
 
   it('tracks usage snapshots in memory', async () => {
     const meter = createInMemoryUsageMeter();
+    const occurredAt = new Date().toISOString();
 
     await meter.record({
       workspaceId: 'ws_test',
@@ -102,7 +104,7 @@ describe('platform runtime', () => {
       unit: 'request',
       amount: 1,
       plan: 'free',
-      metadata: { occurredAt: '2026-03-22T00:00:00.000Z' },
+      metadata: { occurredAt },
     });
     await meter.record({
       workspaceId: 'ws_test',
@@ -110,7 +112,7 @@ describe('platform runtime', () => {
       unit: 'character',
       amount: 1200,
       plan: 'free',
-      metadata: { occurredAt: '2026-03-22T00:00:00.000Z' },
+      metadata: { occurredAt },
     });
 
     const snapshot = await meter.snapshot('ws_test');

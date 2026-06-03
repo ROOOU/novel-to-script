@@ -91,8 +91,8 @@ type MammothModule = {
 };
 
 async function loadMammoth(): Promise<MammothModule> {
-  const module = await import('mammoth');
-  const candidate = module as unknown as Partial<MammothModule> & { default?: MammothModule };
+  const mammothModule = await import('mammoth');
+  const candidate = mammothModule as unknown as Partial<MammothModule> & { default?: MammothModule };
 
   if (typeof candidate.extractRawText === 'function') {
     return candidate as MammothModule;

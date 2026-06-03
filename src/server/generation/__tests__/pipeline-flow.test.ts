@@ -7,6 +7,11 @@ import type {
   GenerationArtifact,
   GenerationJob,
 } from '@/server/shared/platform/domain';
+import type { ScriptGenerationExecutionOptions } from '@/server/script-generation/application/types';
+import type { StoryboardGenerationExecutionOptions } from '@/server/storyboard/application/types';
+
+type ScriptGenerationInput = ScriptGenerationExecutionOptions;
+type StoryboardGenerationInput = StoryboardGenerationExecutionOptions;
 
 const mocks = vi.hoisted(() => ({
   runScriptGeneration: vi.fn(),
@@ -85,7 +90,7 @@ describe('novel-to-storyboard pipeline integration', () => {
     process.env.LLM_API_KEY = 'sk-test';
     delete process.env.REDIS_URL;
 
-    mocks.runScriptGeneration.mockImplementation(async (input: any) => {
+    mocks.runScriptGeneration.mockImplementation(async (input: ScriptGenerationInput) => {
       await input.onProgress?.({ progress: 30, currentStep: 'analyzed', outputSummary: 'analysis ready' });
       await input.onArtifact?.({
         kind: 'analysis',
@@ -125,7 +130,7 @@ describe('novel-to-storyboard pipeline integration', () => {
       await input.onProgress?.({ progress: 100, currentStep: 'done', outputSummary: 'Generated 1 episodes' });
     });
 
-    mocks.runStoryboardGeneration.mockImplementation(async (input: any) => {
+    mocks.runStoryboardGeneration.mockImplementation(async (input: StoryboardGenerationInput) => {
       await input.onProgress?.({ progress: 50, currentStep: 'generating', outputSummary: 'storyboard drafting' });
       await input.onArtifact?.({
         kind: 'storyboard',
@@ -382,7 +387,7 @@ describe('novel-to-storyboard pipeline integration', () => {
     process.env.LLM_API_KEY = 'sk-test';
     delete process.env.REDIS_URL;
 
-    mocks.runScriptGeneration.mockImplementation(async (input: any) => {
+    mocks.runScriptGeneration.mockImplementation(async (input: ScriptGenerationInput) => {
       await input.onArtifact?.({
         kind: 'analysis',
         title: '小说分析',

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import type {
@@ -134,13 +134,22 @@ export function getNowTimestamp(): string {
 async function ensurePlatformStore(): Promise<void> {
   const storePath = getPlatformStorePath();
   await mkdir(path.dirname(storePath), { recursive: true });
-  await writeFile(storePath, JSON.stringify(DEFAULT_DATA, null, 2), 'utf8');
+  await writeStoreFileAtomically(storePath, JSON.stringify(DEFAULT_DATA, null, 2));
 }
 
 async function persistPlatformStore(data: PlatformStoreData): Promise<void> {
   const storePath = getPlatformStorePath();
   await mkdir(path.dirname(storePath), { recursive: true });
-  await writeFile(storePath, JSON.stringify(data, null, 2), 'utf8');
+  await writeStoreFileAtomically(storePath, JSON.stringify(data, null, 2));
+}
+
+async function writeStoreFileAtomically(storePath: string, serializedStore: string): Promise<void> {
+  const tempPath = path.join(
+    path.dirname(storePath),
+    `.${path.basename(storePath)}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`
+  );
+  await writeFile(tempPath, serializedStore, 'utf8');
+  await rename(tempPath, storePath);
 }
 
 async function readPlatformStoreFromDatabase(): Promise<PlatformStoreData> {

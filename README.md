@@ -41,7 +41,27 @@ NovelScript 是一个面向短剧改编的网站。
 - 支持按剧本版本、集数、场景范围筛选分镜输入
 - 分镜结果包含结构化镜头数据，并带有 JSON 解析兜底，降低生成异常时的失败率
 
-### 5. 结构化编辑与版本管理
+### 5. 视频原型与图片资产
+
+- 第一阶段已接入 Gemini Veo 原型闭环：
+  - `shot_plan / videoPrompt -> video-generation job -> mp4 artifact`
+- 工作台新增 `视频生成` tab，用于：
+  - 上传项目级参考图资产
+  - 选择 `shot_plan` 中的结构化镜头
+  - 绑定参考图、首帧、尾帧
+  - 生成并预览 `video_clip`
+- 图片资产当前支持：
+  - `PNG / JPEG / WebP`
+  - 单文件最大 `10 MB`
+  - 统一作为 `GenerationArtifact` 管理，不进入 `SourceDocument`
+- 视频原型当前限制：
+  - 默认输出 `8 秒 / 720p / 9:16 / 单条视频`
+  - 可切换 `16:9`
+  - 最多选择 `3` 张参考图
+  - `firstFrame` 和 `lastFrame` 必须同时提供
+  - 媒体文件保存在本地 `NOVELSCRIPT_MEDIA_DIR`，不接对象存储
+
+### 6. 结构化编辑与版本管理
 
 - 工作台内置结构化编辑器，分开编辑：
   - 分析
@@ -50,12 +70,12 @@ NovelScript 是一个面向短剧改编的网站。
 - 支持版本链、基于版本继续修改、查看当前内容类型
 - 项目侧边栏和流程区会同步显示当前题材、集数、阶段状态
 
-### 6. 导出与交付
+### 7. 导出与交付
 
 - 支持把当前项目的源文、任务和产物导出
 - 适合交付给编剧、分镜师、AI 视频团队或归档备份
 
-### 7. 账号、支付与积分
+### 8. 账号、支付与积分
 
 - 登录方式：仅支持 Google 账号登录
 - 登录后会自动同步站内会话并进入项目工作台
@@ -63,7 +83,7 @@ NovelScript 是一个面向短剧改编的网站。
 - 支持订阅套餐和积分包购买
 - 网站内置积分账户、账单中心、使用记录、兑换码功能
 
-### 8. 运营与测试入口
+### 9. 运营与测试入口
 
 - 提供运营后台
 - 支持兑换码批量生成
@@ -88,12 +108,16 @@ NovelScript 是一个面向短剧改编的网站。
 4. 选择题材类型、叙事风格、集数和单集时长
 5. 先生成剧本，检查分析、大纲和剧本结果
 6. 再按版本或范围生成分镜
-7. 导出当前项目产物
+7. 如需视频，确认资产浏览器里已经出现 `shot_plan`
+8. 在 `视频生成` tab 上传参考图并发起 Veo 任务
+9. 在资产浏览器中预览或下载 `video_clip`
+10. 导出当前项目产物
 
 ## 本地开发
 
 ```bash
 npm install
+cp .env.local.example .env.local
 npm run dev
 ```
 
@@ -113,17 +137,50 @@ npm run lint
 
 ## 环境变量
 
-网站的模型、登录和支付依赖服务端环境变量。
+网站的模型、登录和支付依赖服务端环境变量。本地开发以 `.env.local` 为准，`.env.local.example` 只保留占位符示例。
 
-### 必需变量
+### 基础变量
 
 ```bash
 NEXT_PUBLIC_APP_URL=
 AUTH_SECRET=
-CLERK_SECRET_KEY=
 LLM_API_KEY=
 LLM_BASE_URL=
 LLM_MODEL_NAME=
+NOVELSCRIPT_ENABLE_DEV_AUTH=false
+NOVELSCRIPT_DEV_AUTH_EMAIL=dev-local@example.com
+NOVELSCRIPT_DEV_AUTH_DISPLAY_NAME=Local Dev
+```
+
+说明：
+
+- 如果你只验证视频 UI 显隐，`GEMINI_API_KEY` 即可
+- 如果你要从原文一路生成到 `shot_plan`，仍需要配置 `LLM_*`
+- 如果你只是本地联调 UI 或 API，可以设置 `NOVELSCRIPT_ENABLE_DEV_AUTH=true`，登录页会出现“进入本地开发工作台”按钮，直接跳过 Google 登录
+
+### 视频原型变量
+
+```bash
+GEMINI_API_KEY=
+NOVELSCRIPT_ENABLE_VIDEO_GENERATION=true
+NOVELSCRIPT_VIDEO_MODEL=veo-3.1-generate-preview
+NOVELSCRIPT_VIDEO_JOB_CREDITS=0
+NOVELSCRIPT_VIDEO_TIMEOUT_MS=480000
+NOVELSCRIPT_VIDEO_POLL_INTERVAL_MS=10000
+NOVELSCRIPT_STORE_PATH=.novelscript/store
+NOVELSCRIPT_MEDIA_DIR=.novelscript/media
+```
+
+说明：
+
+- 只有同时满足 `GEMINI_API_KEY` 与 `NOVELSCRIPT_ENABLE_VIDEO_GENERATION=true` 时，工作台才会显示 `视频生成` tab
+- 视频生成出的 `mp4` 和上传图片都会落到 `NOVELSCRIPT_MEDIA_DIR`
+- `NOVELSCRIPT_STORE_PATH` 可用于隔离本地 smoke 数据
+- `NOVELSCRIPT_VIDEO_JOB_CREDITS` 当前主要用于本地原型，未配置时默认为 `0`
+
+### 支付变量
+
+```bash
 PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
 PAYPAL_MODE=
@@ -146,6 +203,48 @@ REDIS_URL=
 - 可以通过 `LLM_FALLBACKS` 配置多个兼容接口做 fallback
 - 生产环境变量以 Vercel 控制台为准
 - 本地 `.env.local` 仅用于本地开发
+
+## 本地视频原型联调
+
+### 前置条件
+
+- `GEMINI_API_KEY` 已写入 `.env.local`
+- `NOVELSCRIPT_ENABLE_VIDEO_GENERATION=true`
+- 项目内已经有至少一个 `shot_plan` 工件
+
+> `视频生成` tab 依赖 `shot_plan`。如果你是从空项目开始联调，先完成一轮正常的剧本与分镜生成，确认资产浏览器里出现 `shot_plan`。
+
+### 最小验证步骤
+
+1. 启动本地服务：
+
+```bash
+npm run dev
+```
+
+2. 登录并进入任一已有 `shot_plan` 的项目
+3. 打开工作台里的 `视频生成` tab
+4. 上传 `PNG / JPEG / WebP` 参考图，文件不超过 `10 MB`
+5. 选择镜头计划和镜头
+6. 按需选择：
+   - 最多 `3` 张 `referenceImages`
+   - `firstFrame`
+   - `lastFrame`
+7. 点击“生成视频片段”
+8. 等待任务完成：
+   - 默认轮询间隔 `10 秒`
+   - 默认超时 `8 分钟`
+9. 成功后在右侧资产区或资产浏览器中确认：
+   - 新增 `video_clip`
+   - 可以直接 `<video>` 预览
+   - 可以通过下载接口拿到 `mp4`
+
+### 当前原型边界
+
+- 暂不支持上传视频作为输入
+- 暂不提供 extend 视频的 UI
+- 暂不接对象存储
+- 如果任务在 `submitting / polling / downloading` 阶段中断，当前策略是手动重试，不做 provider 级恢复
 
 ## 技术栈
 

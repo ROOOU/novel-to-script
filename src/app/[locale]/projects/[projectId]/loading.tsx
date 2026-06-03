@@ -1,13 +1,15 @@
+import { WorkspaceHero } from '@/components/WorkspaceUI';
+
 export default function ProjectDetailLoading() {
   return (
     <div className="workspace-shell stack-gap-lg">
-      <section className="workspace-hero project-detail-hero">
-        <div className="skeleton-panel">
-          <div className="skeleton-line" style={{ width: '120px' }} />
-          <div className="skeleton-line" style={{ width: '320px', height: '32px' }} />
-          <div className="skeleton-line" style={{ width: '520px' }} />
-        </div>
-      </section>
+      <WorkspaceHero
+        variant="detail"
+        eyebrow={<div className="skeleton-line" style={{ width: '120px' }} />}
+        title={<div className="skeleton-line" style={{ width: '320px', height: '32px' }} />}
+        description={<div className="skeleton-line" style={{ width: '520px' }} />}
+        className="loading-hero"
+      />
 
       <section className="workspace-stage-band">
         <div className="skeleton-panel">

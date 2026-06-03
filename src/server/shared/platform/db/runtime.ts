@@ -2,21 +2,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import type {
   ArtifactRelation,
   CreateArtifactRelationInput,
-  CreateCreditAccountInput,
-  CreateCreditLedgerEntryInput,
-  CreateGenerationArtifactInput,
-  CreateGenerationJobInput,
-  CreateOrganizationInput,
-  CreatePaymentOrderInput,
-  CreateProjectInput,
-  CreateRedeemCodeCampaignInput,
-  CreateRedeemCodeInput,
-  CreateRedeemCodeRedemptionInput,
-  CreateSourceDocumentInput,
   CreateSubscriptionInput,
-  CreateUsageEventInput,
-  CreateUserInput,
-  CreateWorkspaceInput,
   CreditAccount,
   CreditLedgerEntry,
   GenerationArtifact,
@@ -29,18 +15,7 @@ import type {
   RedeemCodeRedemption,
   SourceDocument,
   Subscription,
-  UpdateCreditAccountInput,
   UpdateGenerationArtifactInput,
-  UpdateGenerationJobInput,
-  UpdateOrganizationInput,
-  UpdatePaymentOrderInput,
-  UpdateProjectInput,
-  UpdateRedeemCodeCampaignInput,
-  UpdateRedeemCodeInput,
-  UpdateSourceDocumentInput,
-  UpdateSubscriptionInput,
-  UpdateUserInput,
-  UpdateWorkspaceInput,
   UsageEvent,
   User,
   Workspace,
@@ -131,6 +106,12 @@ export function createDatabasePlatformRuntime(): DatabasePlatformRuntime | null 
   };
 }
 
+function toCreateSubscriptionInput(input: UpsertCurrentSubscriptionInput): CreateSubscriptionInput {
+  const { subscriptionId, ...createInput } = input;
+  void subscriptionId;
+  return createInput;
+}
+
 function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRepository {
   const userSelection = {
     id: usersTable.id,
@@ -186,7 +167,13 @@ function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRep
         createdByUserId: input.createdByUserId ?? null,
         updatedByUserId: input.createdByUserId ?? null,
       };
-      await withOptionalUsersDataColumn((includeData) => db.insert(usersTable).values(buildUserRow(entity, includeData)));
+      await withOptionalUsersDataColumn({
+        withData: () => db.insert(usersTable).values(buildUserRow(entity)),
+        withoutData: () =>
+          db
+            .insert(usersTable)
+            .values(buildUserRowWithoutData(entity) as unknown as typeof usersTable.$inferInsert),
+      });
       return entity;
     },
     async update(id, input) {
@@ -198,9 +185,14 @@ function createUserRepository(db: ReturnType<typeof getDatabaseClient>): UserRep
       const entity = applyPatch(current, input);
       entity.updatedAt = getNowTimestamp();
       entity.updatedByUserId = input.updatedByUserId ?? current.updatedByUserId ?? null;
-      await withOptionalUsersDataColumn((includeData) =>
-        db.update(usersTable).set(buildUserRow(entity, includeData)).where(eq(usersTable.id, id))
-      );
+      await withOptionalUsersDataColumn({
+        withData: () => db.update(usersTable).set(buildUserRow(entity)).where(eq(usersTable.id, id)),
+        withoutData: () =>
+          db
+            .update(usersTable)
+            .set(buildUserRowWithoutData(entity) as Partial<typeof usersTable.$inferInsert>)
+            .where(eq(usersTable.id, id)),
+      });
       return entity;
     },
   };
@@ -830,7 +822,7 @@ function createSubscriptionRepository(db: ReturnType<typeof getDatabaseClient>):
         });
       }
 
-      return this.create(input as CreateSubscriptionInput);
+      return this.create(toCreateSubscriptionInput(input));
     },
   };
 }
@@ -1132,8 +1124,8 @@ function normalizeRedeemCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
-function buildUserRow(entity: User, includeData = true): any {
-  const row: Record<string, unknown> = {
+function buildUserRowBase(entity: User): Omit<typeof usersTable.$inferInsert, 'data'> {
+  return {
     ...entity,
     passwordHash: entity.passwordHash ?? null,
     avatarUrl: entity.avatarUrl ?? null,
@@ -1143,12 +1135,17 @@ function buildUserRow(entity: User, includeData = true): any {
     createdByUserId: entity.createdByUserId ?? null,
     updatedByUserId: entity.updatedByUserId ?? null,
   };
+}
 
-  if (includeData) {
-    row.data = entity;
-  }
+function buildUserRow(entity: User): typeof usersTable.$inferInsert {
+  return {
+    ...buildUserRowBase(entity),
+    data: entity,
+  };
+}
 
-  return row;
+function buildUserRowWithoutData(entity: User): Omit<typeof usersTable.$inferInsert, 'data'> {
+  return buildUserRowBase(entity);
 }
 
 function mapUserRow(row: {
@@ -1185,14 +1182,17 @@ function mapUserRow(row: {
   };
 }
 
-async function withOptionalUsersDataColumn<T>(operation: (includeData: boolean) => Promise<T>): Promise<T> {
+async function withOptionalUsersDataColumn<T>(operations: {
+  withData: () => Promise<T>;
+  withoutData: () => Promise<T>;
+}): Promise<T> {
   try {
-    return await operation(true);
+    return await operations.withData();
   } catch (error) {
     if (!isMissingUsersDataColumnError(error)) {
       throw error;
     }
-    return operation(false);
+    return operations.withoutData();
   }
 }
 
@@ -1202,7 +1202,7 @@ function isMissingUsersDataColumnError(error: unknown): boolean {
   return lower.includes('column') && lower.includes('data') && lower.includes('users') && lower.includes('exist');
 }
 
-function buildOrganizationRow(entity: Organization): any {
+function buildOrganizationRow(entity: Organization): typeof organizationsTable.$inferInsert {
   return {
     ...entity,
     metadata: entity.metadata ?? undefined,
@@ -1212,7 +1212,7 @@ function buildOrganizationRow(entity: Organization): any {
   };
 }
 
-function buildWorkspaceRow(entity: Workspace): any {
+function buildWorkspaceRow(entity: Workspace): typeof workspacesTable.$inferInsert {
   return {
     ...entity,
     description: entity.description ?? null,
@@ -1224,7 +1224,7 @@ function buildWorkspaceRow(entity: Workspace): any {
   };
 }
 
-function buildProjectRow(entity: Project): any {
+function buildProjectRow(entity: Project): typeof projectsTable.$inferInsert {
   return {
     ...entity,
     description: entity.description ?? null,
@@ -1239,7 +1239,7 @@ function buildProjectRow(entity: Project): any {
   };
 }
 
-function buildSourceDocumentRow(entity: SourceDocument): any {
+function buildSourceDocumentRow(entity: SourceDocument): typeof sourceDocumentsTable.$inferInsert {
   return {
     ...entity,
     textContent: entity.textContent ?? null,
@@ -1253,7 +1253,7 @@ function buildSourceDocumentRow(entity: SourceDocument): any {
   };
 }
 
-function buildGenerationJobRow(entity: GenerationJob): any {
+function buildGenerationJobRow(entity: GenerationJob): typeof generationJobsTable.$inferInsert {
   return {
     ...entity,
     sourceDocumentId: entity.sourceDocumentId ?? null,
@@ -1274,7 +1274,7 @@ function buildGenerationJobRow(entity: GenerationJob): any {
   };
 }
 
-function buildGenerationArtifactRow(entity: GenerationArtifact): any {
+function buildGenerationArtifactRow(entity: GenerationArtifact): typeof generationArtifactsTable.$inferInsert {
   return {
     ...entity,
     sourceDocumentId: entity.sourceDocumentId ?? null,
@@ -1291,7 +1291,7 @@ function buildGenerationArtifactRow(entity: GenerationArtifact): any {
   };
 }
 
-function buildArtifactRelationRow(entity: ArtifactRelation): any {
+function buildArtifactRelationRow(entity: ArtifactRelation): typeof artifactRelationsTable.$inferInsert {
   return {
     ...entity,
     metadata: entity.metadata ?? undefined,
@@ -1301,7 +1301,7 @@ function buildArtifactRelationRow(entity: ArtifactRelation): any {
   };
 }
 
-function buildUsageEventRow(entity: UsageEvent): any {
+function buildUsageEventRow(entity: UsageEvent): typeof usageEventsTable.$inferInsert {
   return {
     ...entity,
     workspaceId: entity.workspaceId ?? null,
@@ -1320,7 +1320,7 @@ function buildUsageEventRow(entity: UsageEvent): any {
   };
 }
 
-function buildSubscriptionRow(entity: Subscription): any {
+function buildSubscriptionRow(entity: Subscription): typeof subscriptionsTable.$inferInsert {
   return {
     ...entity,
     providerCustomerId: entity.providerCustomerId ?? null,
@@ -1340,7 +1340,7 @@ function buildSubscriptionRow(entity: Subscription): any {
   };
 }
 
-function buildPaymentOrderRow(entity: PaymentOrder): any {
+function buildPaymentOrderRow(entity: PaymentOrder): typeof paymentOrdersTable.$inferInsert {
   return {
     ...entity,
     subscriptionId: entity.subscriptionId ?? null,
@@ -1358,7 +1358,7 @@ function buildPaymentOrderRow(entity: PaymentOrder): any {
   };
 }
 
-function buildCreditAccountRow(entity: CreditAccount): any {
+function buildCreditAccountRow(entity: CreditAccount): typeof creditAccountsTable.$inferInsert {
   return {
     ...entity,
     createdByUserId: entity.createdByUserId ?? null,
@@ -1367,7 +1367,7 @@ function buildCreditAccountRow(entity: CreditAccount): any {
   };
 }
 
-function buildCreditLedgerRow(entity: CreditLedgerEntry): any {
+function buildCreditLedgerRow(entity: CreditLedgerEntry): typeof creditLedgerEntriesTable.$inferInsert {
   return {
     ...entity,
     paymentOrderId: entity.paymentOrderId ?? null,
@@ -1381,7 +1381,7 @@ function buildCreditLedgerRow(entity: CreditLedgerEntry): any {
   };
 }
 
-function buildRedeemCodeCampaignRow(entity: RedeemCodeCampaign): any {
+function buildRedeemCodeCampaignRow(entity: RedeemCodeCampaign): typeof redeemCodeCampaignsTable.$inferInsert {
   return {
     ...entity,
     organizationId: entity.organizationId ?? null,
@@ -1399,7 +1399,7 @@ function buildRedeemCodeCampaignRow(entity: RedeemCodeCampaign): any {
   };
 }
 
-function buildRedeemCodeRow(entity: RedeemCode): any {
+function buildRedeemCodeRow(entity: RedeemCode): typeof redeemCodesTable.$inferInsert {
   return {
     ...entity,
     expiresAt: entity.expiresAt ?? null,
@@ -1410,7 +1410,9 @@ function buildRedeemCodeRow(entity: RedeemCode): any {
   };
 }
 
-function buildRedeemCodeRedemptionRow(entity: RedeemCodeRedemption): any {
+function buildRedeemCodeRedemptionRow(
+  entity: RedeemCodeRedemption
+): typeof redeemCodeRedemptionsTable.$inferInsert {
   return {
     ...entity,
     createdByUserId: entity.createdByUserId ?? null,

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { GENRE_VALUES, SCRIPT_STYLE_VALUES } from '@/lib/types';
+import { VIDEO_ASPECT_RATIO_VALUES } from '@/features/video-generation/contracts';
 
 export const generateConfigSchema = z.object({
   genre: z.enum(GENRE_VALUES),
@@ -96,9 +97,34 @@ const storyboardGenerationJobSchema = z.object({
   payload: storyboardGenerationPayloadSchema,
 });
 
+const videoGenerationPayloadSchema = z
+  .object({
+    shotPlanArtifactId: z.string().min(1),
+    shotId: z.string().min(1),
+    promptOverride: z.string().optional(),
+    referenceImageArtifactIds: z.array(z.string().min(1)).max(3).optional(),
+    firstFrameArtifactId: z.string().min(1).optional(),
+    lastFrameArtifactId: z.string().min(1).optional(),
+    aspectRatio: z.enum(VIDEO_ASPECT_RATIO_VALUES).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if ((value.firstFrameArtifactId && !value.lastFrameArtifactId) || (!value.firstFrameArtifactId && value.lastFrameArtifactId)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'video payload requires both firstFrameArtifactId and lastFrameArtifactId',
+      });
+    }
+  });
+
+const videoGenerationJobSchema = z.object({
+  kind: z.literal('video-generation'),
+  payload: videoGenerationPayloadSchema,
+});
+
 export const createJobSchema = z.discriminatedUnion('kind', [
   scriptGenerationJobSchema,
   storyboardGenerationJobSchema,
+  videoGenerationJobSchema,
 ]);
 
 export type CreateJobInput = z.infer<typeof createJobSchema>;

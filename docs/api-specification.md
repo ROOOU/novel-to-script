@@ -3,8 +3,8 @@
 > 关联 PRD：`docs/comprehensive-prd.md` v3.0  
 > 关联 FSD：`docs/functional-specification.md` v1.0  
 > 关联 Schema：`docs/database-schema.md` v1.0  
-> 更新日期：2026-03-24  
-> 版本：v1.0
+> 更新日期：2026-04-14  
+> 版本：v1.1
 
 ---
 
@@ -163,6 +163,46 @@
 { "ok": false, "error": "PROJECT_NOT_FOUND" }
 ```
 
+### 4.2 上传项目图片资产
+
+#### `POST /api/projects/:projectId/assets` 🔒
+
+上传项目级图片资产，创建一条 `asset-upload` 任务和一个 `reference_image` 工件。
+
+**请求格式**：`multipart/form-data`
+
+**表单字段**：
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `file` | File | 必填，仅支持 `image/png`、`image/jpeg`、`image/webp` |
+| `title` | string | 可选，不传时默认使用文件名去扩展名 |
+
+**限制**：
+
+- 单文件最大 `10 MB`
+- 上传后文件保存到本地 media store，对应工件写入 `storageKey`
+
+**响应 200**：
+```json
+{
+  "ok": true,
+  "job": GenerationJob,
+  "artifact": GenerationArtifact
+}
+```
+
+**响应 400**：
+```json
+{ "ok": false, "error": "ASSET_FILE_REQUIRED" }
+{ "ok": false, "error": "ASSET_FILE_TYPE_INVALID" }
+{ "ok": false, "error": "ASSET_FILE_TOO_LARGE" }
+```
+
+**响应 404**：
+```json
+{ "ok": false, "error": "PROJECT_NOT_FOUND" }
+```
+
 ---
 
 ## 5. 生成任务（Jobs）
@@ -185,7 +225,7 @@
 
 #### `POST /api/projects/:projectId/jobs` 🔒
 
-创建新的生成任务（剧本生成或分镜生成）。
+创建新的生成任务（剧本生成、分镜生成或视频生成）。
 
 **请求体（剧本生成）**：
 ```json
@@ -223,6 +263,33 @@
 
 > **输入优先级**：`scriptArtifactIds` > `scriptText`。至少需要一个。
 
+**请求体（视频生成）**：
+```json
+{
+  "kind": "video-generation",
+  "payload": {
+    "shotPlanArtifactId": "string (required)",
+    "shotId": "string (required)",
+    "promptOverride": "string (optional)",
+    "referenceImageArtifactIds": ["string", "string"],
+    "firstFrameArtifactId": "string (optional)",
+    "lastFrameArtifactId": "string (optional)",
+    "aspectRatio": "9:16 | 16:9"
+  }
+}
+```
+
+**视频任务约束**：
+
+- 只有在 `NOVELSCRIPT_ENABLE_VIDEO_GENERATION=true` 且服务端存在 `GEMINI_API_KEY` 时可调用
+- `shotPlanArtifactId` 必须属于当前项目，且工件类型为 `shot_plan`
+- `shotId` 必须能在 `shot_plan` 中解析到对应镜头
+- 如果没有 `promptOverride`，则目标镜头必须存在 `videoPrompt`
+- `referenceImageArtifactIds` 最多 `3` 个
+- 所有图片工件必须属于当前项目，且类型为 `reference_image`
+- `firstFrameArtifactId` 与 `lastFrameArtifactId` 必须成对出现
+- 当前原型默认调用 Veo 单条视频生成，输出格式为 `video/mp4`
+
 **响应 200**：
 ```json
 {
@@ -237,6 +304,17 @@
 { "ok": false, "error": "SCRIPT_ARTIFACT_NOT_FOUND:artifactId" }
 { "ok": false, "error": "SCRIPT_ARTIFACT_NOT_IN_PROJECT:artifactId" }
 { "ok": false, "error": "SCRIPT_ARTIFACT_KIND_INVALID:artifactId" }
+{ "ok": false, "error": "VIDEO_GENERATION_DISABLED" }
+{ "ok": false, "error": "VIDEO_SHOT_PLAN_NOT_FOUND:artifactId" }
+{ "ok": false, "error": "VIDEO_SHOT_PLAN_NOT_IN_PROJECT:artifactId" }
+{ "ok": false, "error": "VIDEO_SHOT_PLAN_KIND_INVALID:artifactId" }
+{ "ok": false, "error": "VIDEO_SHOT_NOT_FOUND:shotId" }
+{ "ok": false, "error": "VIDEO_PROMPT_REQUIRED" }
+{ "ok": false, "error": "VIDEO_REFERENCE_IMAGE_LIMIT_EXCEEDED" }
+{ "ok": false, "error": "VIDEO_REFERENCE_IMAGE_NOT_FOUND:artifactId" }
+{ "ok": false, "error": "VIDEO_REFERENCE_IMAGE_NOT_IN_PROJECT:artifactId" }
+{ "ok": false, "error": "VIDEO_REFERENCE_IMAGE_KIND_INVALID:artifactId" }
+{ "ok": false, "error": "VIDEO_FRAME_PAIR_REQUIRED" }
 ```
 
 **响应 402**：
@@ -358,7 +436,17 @@
 |------|------|------|
 | `format` | string | 下载格式（可选） |
 
-**响应**：文件流（Content-Disposition: attachment）
+**响应**：文件流（`Content-Disposition: attachment`）
+
+**说明**：
+
+- 当工件带有 `storageKey` 时，接口直接从本地 media store 流式返回二进制
+- `reference_image` 会返回对应图片 MIME：
+  - `image/png`
+  - `image/jpeg`
+  - `image/webp`
+- `video_clip` 会返回 `video/mp4`
+- 旧文本工件仍按原有逻辑从 `artifact.content` 下载
 
 ---
 
@@ -575,6 +663,20 @@ PayPal 服务端回调。**无需认证**，通过 webhook 签名验证。
 | `SCRIPT_ARTIFACT_NOT_FOUND:{id}` | 400 | 剧本工件不存在 |
 | `SCRIPT_ARTIFACT_NOT_IN_PROJECT:{id}` | 400 | 剧本工件不属于当前项目 |
 | `SCRIPT_ARTIFACT_KIND_INVALID:{id}` | 400 | 工件类型非 script |
+| `ASSET_FILE_REQUIRED` | 400 | 未上传文件 |
+| `ASSET_FILE_TYPE_INVALID` | 400 | 上传文件不是支持的图片类型 |
+| `ASSET_FILE_TOO_LARGE` | 400 | 图片超过 10 MB |
+| `VIDEO_GENERATION_DISABLED` | 400 | 视频能力未开启 |
+| `VIDEO_SHOT_PLAN_NOT_FOUND:{id}` | 400 | 镜头计划不存在 |
+| `VIDEO_SHOT_PLAN_NOT_IN_PROJECT:{id}` | 400 | 镜头计划不属于当前项目 |
+| `VIDEO_SHOT_PLAN_KIND_INVALID:{id}` | 400 | 工件类型不是 `shot_plan` |
+| `VIDEO_SHOT_NOT_FOUND:{shotId}` | 400 | 镜头计划中找不到目标镜头 |
+| `VIDEO_PROMPT_REQUIRED` | 400 | 镜头和覆盖 prompt 都为空 |
+| `VIDEO_REFERENCE_IMAGE_LIMIT_EXCEEDED` | 400 | 参考图超过 3 张 |
+| `VIDEO_REFERENCE_IMAGE_NOT_FOUND:{id}` | 400 | 参考图不存在 |
+| `VIDEO_REFERENCE_IMAGE_NOT_IN_PROJECT:{id}` | 400 | 参考图不属于当前项目 |
+| `VIDEO_REFERENCE_IMAGE_KIND_INVALID:{id}` | 400 | 工件类型不是 `reference_image` |
+| `VIDEO_FRAME_PAIR_REQUIRED` | 400 | 首帧和尾帧没有成对提供 |
 | `JOB_CREATE_FAILED` | 400 | 任务创建失败 |
 | `PIPELINE_CREATE_FAILED` | 400 | Pipeline 创建失败 |
 | `JOB_CANCELLED` | — | 内部：任务已取消 |
@@ -597,6 +699,7 @@ PayPal 服务端回调。**无需认证**，通过 webhook 签名验证。
 | POST | `/api/projects` | 创建项目 |
 | GET | `/api/projects/:projectId` | 项目 Bundle |
 | POST | `/api/projects/:projectId/source` | 保存原文 |
+| POST | `/api/projects/:projectId/assets` | 上传图片资产 |
 | GET | `/api/projects/:projectId/jobs` | 任务列表 |
 | POST | `/api/projects/:projectId/jobs` | 创建任务 |
 | GET/PATCH | `/api/projects/:projectId/jobs/:jobId` | 任务详情/更新 |

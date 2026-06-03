@@ -1,10 +1,11 @@
 import { NextRequest } from 'next/server';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   requireViewerResponse: vi.fn(),
   getPlatformRuntime: vi.fn(),
   createNovelToStoryboardPipeline: vi.fn(),
+  getServerLLMConfigError: vi.fn(),
 }));
 
 vi.mock('@/server/auth/http', () => ({
@@ -20,9 +21,17 @@ vi.mock('@/server/generation/pipeline-service', () => ({
     mocks.createNovelToStoryboardPipeline(...args),
 }));
 
+vi.mock('@/lib/server-llm-config', () => ({
+  getServerLLMConfigError: (...args: unknown[]) => mocks.getServerLLMConfigError(...args),
+}));
+
 import { POST } from '@/app/api/projects/[projectId]/pipelines/route';
 
 describe('POST /api/projects/[projectId]/pipelines', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireViewerResponse.mockResolvedValue({
@@ -30,9 +39,11 @@ describe('POST /api/projects/[projectId]/pipelines', () => {
         user: { id: 'user_1' },
         organization: { id: 'org_1' },
         workspace: { id: 'ws_1' },
+        subscription: { planKey: 'free' },
       },
       response: null,
     });
+    mocks.getServerLLMConfigError.mockReturnValue(null);
     mocks.getPlatformRuntime.mockReturnValue({
       projects: {
         getById: vi.fn(),
@@ -252,6 +263,106 @@ describe('POST /api/projects/[projectId]/pipelines', () => {
     expect(payload.ok).toBe(false);
     expect(typeof payload.error).toBe('string');
     expect(payload.error).toContain('too_small');
+  });
+
+  it('rejects pipeline creation before enqueueing when the server lacks an LLM provider', async () => {
+    mocks.getServerLLMConfigError.mockReturnValue(
+      '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。'
+    );
+    mocks.getPlatformRuntime.mockReturnValue({
+      projects: {
+        getById: vi.fn().mockResolvedValue({
+          id: 'proj_1',
+          organizationId: 'org_1',
+          workspaceId: 'ws_1',
+        }),
+      },
+    });
+
+    const request = new NextRequest('http://localhost/api/projects/proj_1/pipelines', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'novel-to-storyboard',
+        payload: {
+          text: 'novel text',
+          genre: 'urban',
+          config: {
+            genre: 'urban',
+            episodeCount: 1,
+            episodeDuration: '1:00-1:30',
+            style: 'dramatic',
+            includeDirectorNotes: true,
+          },
+        },
+      }),
+      headers: {
+        'content-type': 'application/json',
+      },
+    });
+
+    const response = await POST(request, { params: Promise.resolve({ projectId: 'proj_1' }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload).toEqual({
+      ok: false,
+      error: '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。',
+    });
+    expect(mocks.createNovelToStoryboardPipeline).not.toHaveBeenCalled();
+  });
+
+  it('allows pipeline creation in local dev fallback mode when the server lacks an LLM provider', async () => {
+    vi.stubEnv('NOVELSCRIPT_ENABLE_DEV_AUTH', 'true');
+    mocks.getServerLLMConfigError.mockReturnValue(
+      '服务端未配置可用的 LLM Provider，请设置 LLM_API_KEY 或 LLM_FALLBACKS。'
+    );
+    mocks.getPlatformRuntime.mockReturnValue({
+      projects: {
+        getById: vi.fn().mockResolvedValue({
+          id: 'proj_1',
+          organizationId: 'org_1',
+          workspaceId: 'ws_1',
+        }),
+      },
+    });
+    mocks.createNovelToStoryboardPipeline.mockResolvedValue({
+      mode: 'novel-to-storyboard',
+      job: { id: 'job_dev_pipeline' },
+    });
+
+    const request = new NextRequest('http://localhost/api/projects/proj_1/pipelines', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'novel-to-storyboard',
+        payload: {
+          text: 'novel text',
+          genre: 'urban',
+          config: {
+            genre: 'urban',
+            episodeCount: 1,
+            episodeDuration: '1:00-1:30',
+            style: 'dramatic',
+            includeDirectorNotes: true,
+          },
+        },
+      }),
+      headers: {
+        'content-type': 'application/json',
+      },
+    });
+
+    const response = await POST(request, { params: Promise.resolve({ projectId: 'proj_1' }) });
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      ok: true,
+      pipeline: {
+        mode: 'novel-to-storyboard',
+        job: { id: 'job_dev_pipeline' },
+      },
+    });
+    expect(mocks.createNovelToStoryboardPipeline).toHaveBeenCalledTimes(1);
   });
 
   it('maps insufficient credits to 402', async () => {

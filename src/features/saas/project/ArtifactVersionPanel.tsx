@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { WorkspaceListRow } from '@/components/WorkspaceUI';
 import type { GenerationArtifact } from '@/server/shared/platform/domain';
 import { summarizeVersionDiff } from '@/lib/version-summary';
 
@@ -37,7 +38,10 @@ export function ArtifactVersionPanel({
 }: ArtifactVersionPanelProps) {
   const selectedArtifact =
     artifacts.find((artifact) => artifact.id === selectedArtifactId) ?? artifacts[0] ?? null;
-  const [draftContent, setDraftContent] = useState(selectedArtifact?.content ?? '');
+  const [draftState, setDraftState] = useState(() => ({
+    artifactId: selectedArtifact?.id ?? null,
+    content: selectedArtifact?.content ?? '',
+  }));
   const [saving, setSaving] = useState(false);
 
   const versionHistory = useMemo(() => {
@@ -71,10 +75,10 @@ export function ArtifactVersionPanel({
     () => summarizeVersionDiff(previousVersion?.content, selectedArtifact?.content),
     [previousVersion?.content, selectedArtifact?.content]
   );
-
-  useEffect(() => {
-    setDraftContent(selectedArtifact?.content ?? '');
-  }, [selectedArtifact?.id, selectedArtifact?.content]);
+  const draftContent =
+    draftState.artifactId === (selectedArtifact?.id ?? null)
+      ? draftState.content
+      : (selectedArtifact?.content ?? '');
 
   async function handleSaveVersion() {
     if (!selectedArtifact) {
@@ -119,13 +123,13 @@ export function ArtifactVersionPanel({
           </div>
           {selectedArtifact ? (
             <div className="artifact-block">
-              <div className="list-row">
+              <WorkspaceListRow>
                 <div>
                   <strong>{selectedArtifact.title}</strong>
                   <p>{selectedArtifact.kind}</p>
                 </div>
                 <span>v{selectedArtifact.version}</span>
-              </div>
+              </WorkspaceListRow>
               <div className="artifact-meta-grid">
                 <div className="artifact-meta-card">
                   <span>{historyLabel}</span>
@@ -150,14 +154,24 @@ export function ArtifactVersionPanel({
               <textarea
                 className="artifact-editor"
                 value={draftContent}
-                onChange={(event) => setDraftContent(event.target.value)}
+                onChange={(event) =>
+                  setDraftState({
+                    artifactId: selectedArtifact.id,
+                    content: event.target.value,
+                  })
+                }
                 rows={18}
               />
               <div className="action-row">
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => setDraftContent(selectedArtifact.content ?? '')}
+                  onClick={() =>
+                    setDraftState({
+                      artifactId: selectedArtifact.id,
+                      content: selectedArtifact.content ?? '',
+                    })
+                  }
                 >
                   {resetLabel}
                 </button>

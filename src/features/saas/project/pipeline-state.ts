@@ -13,7 +13,7 @@ export function deriveProjectPipelineStages(
   artifacts: GenerationArtifact[],
   jobs: GenerationJob[]
 ): PipelineStageItem[] {
-  const latestRootJob = findLatestPipelineRootJob(jobs);
+  const latestRootJob = findLatestPipelineRootJob(jobs, artifacts);
 
   if (!latestRootJob) {
     return buildFallbackStages(locale, sourceText, artifacts);
@@ -65,7 +65,7 @@ export function deriveProjectPipelineStages(
   }
 
   const scriptJob = latestRootJob;
-  const storyboardJob = findLinkedStoryboardJob(scriptJob, jobs);
+  const storyboardJob = findLinkedStoryboardJob(scriptJob, jobs, artifacts);
   const scopedScriptArtifacts = artifacts.filter(
     (artifact) => artifact.generationJobId === scriptJob.id
   );
@@ -252,17 +252,64 @@ function summarizeArtifactCount(
     : `${count} 个产物`;
 }
 
-function findLatestPipelineRootJob(jobs: GenerationJob[]) {
+function findLatestPipelineRootJob(jobs: GenerationJob[], artifacts: GenerationArtifact[]) {
   return [...jobs]
-    .filter((job) => job.kind === 'script-generation' || !readJobMetadata(job).upstreamJobId)
+    .filter(
+      (job) =>
+        job.kind === 'script-generation' ||
+        (job.kind === 'storyboard-generation' && !getStoryboardUpstreamJobId(job, artifacts))
+    )
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null;
 }
 
-function findLinkedStoryboardJob(scriptJob: GenerationJob, jobs: GenerationJob[]) {
+function findLinkedStoryboardJob(
+  scriptJob: GenerationJob,
+  jobs: GenerationJob[],
+  artifacts: GenerationArtifact[] = []
+) {
   return [...jobs]
     .filter((job) => job.kind === 'storyboard-generation')
-    .filter((job) => readJobMetadata(job).upstreamJobId === scriptJob.id)
+    .filter((job) => getStoryboardUpstreamJobId(job, artifacts) === scriptJob.id)
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0] ?? null;
+}
+
+function getStoryboardUpstreamJobId(
+  job: GenerationJob,
+  artifacts: GenerationArtifact[]
+) {
+  const metadataUpstreamJobId = readJobMetadata(job).upstreamJobId;
+  if (metadataUpstreamJobId || job.kind !== 'storyboard-generation') {
+    return metadataUpstreamJobId;
+  }
+
+  const sourceArtifactIds = readStoryboardSourceArtifactIds(job);
+  if (sourceArtifactIds.length === 0) {
+    return null;
+  }
+
+  const sourceJobIds = new Set(
+    sourceArtifactIds
+      .map((artifactId) => artifacts.find((artifact) => artifact.id === artifactId))
+      .filter(
+        (artifact): artifact is GenerationArtifact =>
+          Boolean(artifact) && artifact?.kind === 'script'
+      )
+      .map((artifact) => artifact.generationJobId)
+      .filter(Boolean)
+  );
+
+  return sourceJobIds.size === 1 ? Array.from(sourceJobIds)[0] : null;
+}
+
+function readStoryboardSourceArtifactIds(job: GenerationJob) {
+  const payload = asRecord(job.inputSnapshot?.payload);
+  const selection = asRecord(payload.selection);
+  return Array.from(
+    new Set([
+      ...readStringArray(payload.scriptArtifactIds),
+      ...readStringArray(selection.artifactIds),
+    ])
+  );
 }
 
 function deriveJobStageStatus(
@@ -452,6 +499,12 @@ function readJobMetadata(job: GenerationJob) {
     upstreamJobId:
       typeof metadata.upstreamJobId === 'string' ? metadata.upstreamJobId : null,
   };
+}
+
+function readStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : [];
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

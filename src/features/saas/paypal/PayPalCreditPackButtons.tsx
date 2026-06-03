@@ -46,7 +46,13 @@ declare global {
   }
 }
 
-export function PayPalCreditPackButtons(props: {
+export function PayPalCreditPackButtons({
+  creditPackKey,
+  sdkReady,
+  onRequireLogin,
+  onError,
+  onSuccess,
+}: {
   creditPackKey: string;
   sdkReady: boolean;
   onRequireLogin: () => void;
@@ -57,7 +63,7 @@ export function PayPalCreditPackButtons(props: {
   const paymentOrderIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!props.sdkReady || !containerRef.current || !window.paypal) {
+    if (!sdkReady || !containerRef.current || !window.paypal) {
       return;
     }
 
@@ -95,13 +101,13 @@ export function PayPalCreditPackButtons(props: {
       },
       createOrder: async () => {
         const response = await postJsonWithTimeout('/api/billing/paypal/create-order', {
-          creditPackKey: props.creditPackKey,
+          creditPackKey,
           requestedCurrency: 'USD',
         });
         const payload = await response.json();
 
         if (response.status === 401) {
-          props.onRequireLogin();
+          onRequireLogin();
           throw new Error('AUTH_REQUIRED');
         }
 
@@ -122,7 +128,7 @@ export function PayPalCreditPackButtons(props: {
         const payload = await response.json();
 
         if (response.status === 401) {
-          props.onRequireLogin();
+          onRequireLogin();
           throw new Error('AUTH_REQUIRED');
         }
 
@@ -130,15 +136,15 @@ export function PayPalCreditPackButtons(props: {
           throw new Error(payload.error ?? 'PAYPAL_CAPTURE_FAILED');
         }
 
-        props.onSuccess();
+        onSuccess();
       },
       onCancel: () => {
-        props.onError('PAYPAL_CHECKOUT_CANCELLED');
+        onError('PAYPAL_CHECKOUT_CANCELLED');
       },
       onError: (error) => {
         const message = error instanceof Error ? error.message : 'PAYPAL_BUTTONS_FAILED';
         if (message !== 'AUTH_REQUIRED') {
-          props.onError(message);
+          onError(message);
         }
       },
     });
@@ -149,7 +155,7 @@ export function PayPalCreditPackButtons(props: {
       }
       const message = error instanceof Error ? error.message : 'PAYPAL_BUTTONS_RENDER_FAILED';
       if (message !== 'AUTH_REQUIRED') {
-        props.onError(message);
+        onError(message);
       }
     });
 
@@ -158,7 +164,7 @@ export function PayPalCreditPackButtons(props: {
       container.innerHTML = '';
       void buttons.close?.();
     };
-  }, [props.creditPackKey, props.onError, props.onRequireLogin, props.onSuccess, props.sdkReady]);
+  }, [creditPackKey, onError, onRequireLogin, onSuccess, sdkReady]);
 
   return <div ref={containerRef} />;
 }

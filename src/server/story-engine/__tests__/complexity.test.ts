@@ -45,4 +45,31 @@ describe('story engine complexity', () => {
     expect(chunks).toHaveLength(1);
     expect(chunks[0]?.charCount).toBe(text.length);
   });
+
+  it('prioritizes chapter boundaries when segmented text includes chapter headings', () => {
+    const text = [
+      `第一章 开场\n\n${'甲'.repeat(1600)}`,
+      `第二章 进展\n\n${'乙'.repeat(1600)}`,
+      `第三章 反转\n\n${'丙'.repeat(1600)}`,
+      `第四章 决断\n\n${'丁'.repeat(1600)}`,
+    ].join('\n\n');
+
+    const chunks = buildStoryChunks(text, {
+      score: 100,
+      textLength: text.length,
+      estimatedSceneBreaks: 4,
+      estimatedTimeJumps: 0,
+      estimatedPovSwitches: 0,
+      estimatedCharacterDensity: 0,
+      recommendedExecutionMode: 'segmented',
+      chunkCount: 2,
+    });
+
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]?.text.startsWith('第一章 开场')).toBe(true);
+    expect(chunks[0]?.text).toContain('第二章 进展');
+    expect(chunks[0]?.text).not.toContain('第三章 反转');
+    expect(chunks[1]?.text.startsWith('第三章 反转')).toBe(true);
+    expect(chunks[1]?.text).toContain('第四章 决断');
+  });
 });

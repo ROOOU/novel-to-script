@@ -4,6 +4,7 @@ import { createProjectGenerationJob } from '@/server/generation/service';
 import { getPlatformRuntime } from '@/server/shared/platform';
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
 import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
+import type { VideoGenerationRequest } from '@/features/video-generation/contracts';
 
 export type ProjectGenerationJobActionResult =
   | {
@@ -127,11 +128,15 @@ async function getProjectGenerationJobOrThrow(
 function isRetryableJob(
   job: GenerationJob
 ): job is GenerationJob & {
-  kind: 'script-generation' | 'storyboard-generation';
+  kind: 'script-generation' | 'storyboard-generation' | 'video-generation';
   status: 'failed' | 'cancelled';
 } {
   return (
-    (job.kind === 'script-generation' || job.kind === 'storyboard-generation') &&
+    (
+      job.kind === 'script-generation' ||
+      job.kind === 'storyboard-generation' ||
+      job.kind === 'video-generation'
+    ) &&
     (job.status === 'failed' || job.status === 'cancelled')
   );
 }
@@ -141,11 +146,11 @@ function isCancelableJob(job: GenerationJob) {
 }
 
 function parseJobSnapshot(value: Record<string, unknown>): {
-  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2;
+  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2 | VideoGenerationRequest;
   metadata: Record<string, unknown>;
 } {
   return {
-    payload: value.payload as ScriptGenerationRequest | StoryboardGenerateRequestV2 | undefined,
+    payload: value.payload as ScriptGenerationRequest | StoryboardGenerateRequestV2 | VideoGenerationRequest | undefined,
     metadata: isRecord(value.metadata) ? value.metadata : {},
   };
 }

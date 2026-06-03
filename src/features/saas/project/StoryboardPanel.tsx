@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { WorkspaceListRow, WorkspaceStatusPill } from '@/components/WorkspaceUI';
+import { parseStoryboardShotsFromContent } from '@/lib/storyboard-shots';
 import type {
   ArtifactRelation,
   GenerationArtifact,
@@ -91,6 +93,13 @@ interface StoryboardPanelProps {
     diagnosticsInvalidShots: string;
     diagnosticsParseError: string;
     diagnosticsHealthy: string;
+    linkedOutputs: string;
+    linkedOutputsHint: string;
+    linkedOutputsEmpty: string;
+    shotPlans: string;
+    promptPacks: string;
+    promptPackEntries: string;
+    promptPackTarget: string;
   }>;
 }
 
@@ -157,12 +166,35 @@ export function StoryboardPanel({
   const selectedCharacters = readStringArray(selectedMetadata.characters);
   const selectedScenes = readStringArray(selectedMetadata.scenes);
   const selectedShots = readStoryboardShots(selectedMetadata.shots);
+  const selectedLinkedOutputs = selectedArtifact
+    ? [...artifacts]
+        .filter(
+          (artifact) =>
+            artifact.id !== selectedArtifact.id &&
+            artifact.generationJobId === selectedArtifact.generationJobId &&
+            (artifact.kind === 'shot_plan' || artifact.kind === 'prompt_pack')
+        )
+        .sort((left, right) => {
+          const kindRank = getLinkedOutputRank(left.kind) - getLinkedOutputRank(right.kind);
+          if (kindRank !== 0) {
+            return kindRank;
+          }
+
+          return right.createdAt.localeCompare(left.createdAt) || right.version - left.version;
+        })
+    : [];
+  const selectedShotPlanArtifacts = selectedLinkedOutputs.filter(
+    (artifact) => artifact.kind === 'shot_plan'
+  );
+  const selectedPromptPackArtifacts = selectedLinkedOutputs.filter(
+    (artifact) => artifact.kind === 'prompt_pack'
+  );
   const selectedShotCount = readOptionalNumber(selectedMetadata.shotCount);
   const selectedParseFallbackMode = readParseFallbackMode(selectedMetadata.parseFallbackMode);
   const selectedInvalidShotIndexes = readNumberArray(selectedMetadata.invalidShotIndexes);
   const selectedInvalidShotErrors = readStringArray(selectedMetadata.invalidShotErrors);
   const selectedParseError = readOptionalString(selectedMetadata.parseError);
-  const selectedExecutionDiagnostics = useMemo(() => {
+  const selectedExecutionDiagnostics = (() => {
     if (!selectedArtifact) {
       return null;
     }
@@ -177,7 +209,7 @@ export function StoryboardPanel({
     );
 
     return readMergedScriptDiagnostics(diagnosticsArtifacts.map((artifact) => artifact.metadata));
-  }, [selectedArtifact, selectedLineage?.upstream]);
+  })();
   const canShowShotView = Array.isArray(selectedMetadata.shots);
   const activePreviewMode = canShowShotView ? previewMode : 'text';
   const chainPreview = selectedLineage?.chainArtifacts
@@ -186,13 +218,13 @@ export function StoryboardPanel({
   return (
     <article className="card stack-gap storyboard-panel">
       <div className="stack-gap-sm">
-        <div className="list-row">
+        <WorkspaceListRow>
           <div>
             <h2>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
           <span className="chip">{storyboardArtifacts.length}</span>
-        </div>
+        </WorkspaceListRow>
       </div>
 
       <div className="artifact-browser-layout storyboard-layout">
@@ -224,13 +256,13 @@ export function StoryboardPanel({
                       setPreviewMode('text');
                     }}
                   >
-                    <div className="list-row">
+                    <WorkspaceListRow>
                       <div>
                         <strong>{artifact.title}</strong>
                         <p>{artifact.kind}</p>
                       </div>
-                      <span className={`status-pill status-pill-${statusTone}`}>{artifact.version}</span>
-                    </div>
+                      <WorkspaceStatusPill tone={statusTone}>{artifact.version}</WorkspaceStatusPill>
+                    </WorkspaceListRow>
                     <div className="artifact-browser-meta">
                       <span>{`${mergedLabels.relationCount}: ${relationCount}`}</span>
                       <span>{formatLocaleDateTime(locale, artifact.createdAt)}</span>
@@ -263,14 +295,104 @@ export function StoryboardPanel({
                 </a>
               </div>
 
+              <div className="storyboard-summary-strip">
+                <div className="storyboard-summary-card">
+                  <span>{mergedLabels.diagnosticsShotCount}</span>
+                  <strong>{selectedShotCount ?? selectedShots.length}</strong>
+                </div>
+                <div className="storyboard-summary-card">
+                  <span>{mergedLabels.shotPlans}</span>
+                  <strong>{selectedShotPlanArtifacts.length}</strong>
+                </div>
+                <div className="storyboard-summary-card">
+                  <span>{mergedLabels.promptPacks}</span>
+                  <strong>{selectedPromptPackArtifacts.length}</strong>
+                </div>
+                <div className="storyboard-summary-card">
+                  <span>{mergedLabels.sourceArtifacts}</span>
+                  <strong>{selectedSourceArtifacts.length}</strong>
+                </div>
+              </div>
+
+              <section className="artifact-source-panel">
+                <WorkspaceListRow>
+                  <strong>{mergedLabels.linkedOutputs}</strong>
+                  <span className="chip">{selectedLinkedOutputs.length}</span>
+                </WorkspaceListRow>
+                <p className="helper-text">{mergedLabels.linkedOutputsHint}</p>
+                {selectedLinkedOutputs.length === 0 ? (
+                  <p className="helper-text">{mergedLabels.linkedOutputsEmpty}</p>
+                ) : (
+                  <div className="storyboard-output-grid">
+                    {selectedShotPlanArtifacts.map((artifact) => (
+                      <article key={artifact.id} className="storyboard-output-card">
+                        <WorkspaceListRow>
+                          <div>
+                            <strong>{artifact.title}</strong>
+                            <p>{formatArtifactKind(locale, artifact.kind)} · v{artifact.version}</p>
+                          </div>
+                          <a
+                            className="inline-link"
+                            href={downloadHrefForArtifact?.(artifact) ?? `/api/artifacts/${artifact.id}/download`}
+                          >
+                            {mergedLabels.download}
+                          </a>
+                        </WorkspaceListRow>
+                        <div className="artifact-detail-grid">
+                          <div className="artifact-meta-card">
+                            <span>{mergedLabels.diagnosticsShotCount}</span>
+                            <strong>{readShotPlanCount(artifact)}</strong>
+                          </div>
+                          <div className="artifact-meta-card">
+                            <span>{mergedLabels.createdAt}</span>
+                            <strong>{formatLocaleDateTime(locale, artifact.createdAt)}</strong>
+                          </div>
+                        </div>
+                        <p className="source-chain-snippet">{excerpt(artifact.content ?? '')}</p>
+                      </article>
+                    ))}
+                    {selectedPromptPackArtifacts.map((artifact) => {
+                      const summary = readPromptPackSummary(artifact.content);
+                      return (
+                        <article key={artifact.id} className="storyboard-output-card">
+                          <WorkspaceListRow>
+                            <div>
+                              <strong>{artifact.title}</strong>
+                              <p>{formatArtifactKind(locale, artifact.kind)} · v{artifact.version}</p>
+                            </div>
+                            <a
+                              className="inline-link"
+                              href={downloadHrefForArtifact?.(artifact) ?? `/api/artifacts/${artifact.id}/download`}
+                            >
+                              {mergedLabels.download}
+                            </a>
+                          </WorkspaceListRow>
+                          <div className="artifact-detail-grid">
+                            <div className="artifact-meta-card">
+                              <span>{mergedLabels.promptPackTarget}</span>
+                              <strong>{summary.targetPlatform || mergedLabels.valueNotProvided}</strong>
+                            </div>
+                            <div className="artifact-meta-card">
+                              <span>{mergedLabels.promptPackEntries}</span>
+                              <strong>{summary.entryCount}</strong>
+                            </div>
+                          </div>
+                          <p className="source-chain-snippet">{excerpt(artifact.content ?? '')}</p>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
               <div className="artifact-preview-panel">
                 <div className="stack-gap-sm">
-                  <div className="list-row">
+                  <WorkspaceListRow>
                     <strong>{mergedLabels.preview}</strong>
-                    <span className={`status-pill status-pill-${getJobTone(selectedJob?.status)}`}>
+                    <WorkspaceStatusPill tone={getJobTone(selectedJob?.status)}>
                       {formatJobStatus(locale, selectedJob?.status ?? 'pending')}
-                    </span>
-                  </div>
+                    </WorkspaceStatusPill>
+                  </WorkspaceListRow>
                   {canShowShotView ? (
                     <section className="segmented-control" aria-label={mergedLabels.preview}>
                       <button
@@ -299,13 +421,13 @@ export function StoryboardPanel({
                           key={`${shot.sceneId}-${shot.shotId}-${index}`}
                           className="source-chain-card"
                         >
-                          <div className="list-row">
+                          <WorkspaceListRow>
                             <div>
                               <strong>{shot.shotId || `${mergedLabels.shotView} ${index + 1}`}</strong>
                               <p>{shot.shotType || mergedLabels.valueNotProvided}</p>
                             </div>
                             <span className="chip">{shot.sceneId || mergedLabels.valueNotProvided}</span>
-                          </div>
+                          </WorkspaceListRow>
 
                           <div className="artifact-detail-grid">
                             {[
@@ -352,16 +474,14 @@ export function StoryboardPanel({
               <section className="artifact-source-panel">
                 {selectedExecutionDiagnostics ? (
                   <>
-                    <div className="list-row">
+                    <WorkspaceListRow>
                       <strong>{mergedLabels.executionDiagnostics}</strong>
-                      <span
-                        className={`status-pill status-pill-${
-                          selectedExecutionDiagnostics.executionMode === 'segmented' ? 'running' : 'success'
-                        }`}
+                      <WorkspaceStatusPill
+                        tone={selectedExecutionDiagnostics.executionMode === 'segmented' ? 'running' : 'success'}
                       >
                         {formatExecutionModeLabel(locale, selectedExecutionDiagnostics.executionMode)}
-                      </span>
-                    </div>
+                      </WorkspaceStatusPill>
+                    </WorkspaceListRow>
                     <p className="helper-text">
                       {formatExecutionBehaviorSummary(locale, selectedExecutionDiagnostics)}
                     </p>
@@ -396,22 +516,22 @@ export function StoryboardPanel({
               </section>
 
               <section className="artifact-source-panel">
-                <div className="list-row">
+                <WorkspaceListRow>
                   <strong>{mergedLabels.diagnostics}</strong>
-                  <span
-                    className={`status-pill status-pill-${
+                  <WorkspaceStatusPill
+                    tone={
                       selectedParseError || selectedInvalidShotIndexes.length > 0
                         ? 'danger'
                         : selectedParseFallbackMode
                           ? 'running'
                           : 'success'
-                    }`}
+                    }
                   >
                     {selectedParseFallbackMode
                       ? formatFallbackModeLabel(mergedLabels, selectedParseFallbackMode)
                       : mergedLabels.diagnosticsStructured}
-                  </span>
-                </div>
+                  </WorkspaceStatusPill>
+                </WorkspaceListRow>
                 <p className="helper-text">
                   {selectedParseFallbackMode
                     ? mergedLabels.diagnosticsSummary
@@ -472,12 +592,12 @@ export function StoryboardPanel({
 
               {selectedCharacters.length > 0 || selectedScenes.length > 0 ? (
                 <section className="artifact-source-panel">
-                  <div className="list-row">
+                  <WorkspaceListRow>
                     <strong>{mergedLabels.sourceMetadata}</strong>
                     <span className="chip">
                       {Number(selectedCharacters.length > 0) + Number(selectedScenes.length > 0)}
                     </span>
-                  </div>
+                  </WorkspaceListRow>
 
                   {selectedCharacters.length > 0 ? (
                     <div className="artifact-source-summary">
@@ -496,10 +616,10 @@ export function StoryboardPanel({
               ) : null}
 
               <section className="artifact-source-panel">
-                <div className="list-row">
+                <WorkspaceListRow>
                   <strong>{mergedLabels.sourceChain}</strong>
                   <span className="chip">{selectedSourceArtifacts.length}</span>
-                </div>
+                </WorkspaceListRow>
                 {chainPreview ? <p className="helper-text">{chainPreview}</p> : null}
 
                 {selectedSourceArtifacts.length === 0 ? (
@@ -518,7 +638,7 @@ export function StoryboardPanel({
 
                       return (
                         <article key={entry.artifactId} className="source-chain-card">
-                          <div className="list-row">
+                          <WorkspaceListRow>
                             <div>
                               <strong>{artifact?.title ?? shortenId(entry.artifactId)}</strong>
                               <p>
@@ -535,7 +655,7 @@ export function StoryboardPanel({
                                 {mergedLabels.download}
                               </a>
                             ) : null}
-                          </div>
+                          </WorkspaceListRow>
                           <div className="artifact-browser-meta">
                             <span>{formatLocaleDateTime(locale, artifact?.createdAt ?? null)}</span>
                             <span>{relationLabel}</span>
@@ -583,7 +703,7 @@ function getDefaultLabels(locale: SupportedLocale) {
   if (locale === 'en-US') {
     return {
       emptyState: 'No storyboard artifacts yet.',
-      noSelection: 'Select a storyboard artifact to inspect its text, source relation, and download link.',
+      noSelection: 'Select a storyboard artifact to inspect its text, shot plans, prompt packs, source relation, and downloads.',
       preview: 'Storyboard preview',
       download: 'Download',
       sourceChain: 'Source chain',
@@ -638,12 +758,19 @@ function getDefaultLabels(locale: SupportedLocale) {
       diagnosticsInvalidShots: 'Recovered shots',
       diagnosticsParseError: 'Parse signal',
       diagnosticsHealthy: 'This storyboard was parsed from structured output without a fallback path.',
+      linkedOutputs: 'Linked outputs',
+      linkedOutputsHint: 'Shot plans and prompt packs generated in the same storyboard run stay visible here.',
+      linkedOutputsEmpty: 'No linked shot plans or prompt packs were found for this storyboard version.',
+      shotPlans: 'Shot plans',
+      promptPacks: 'Prompt packs',
+      promptPackEntries: 'Entries',
+      promptPackTarget: 'Target',
     };
   }
 
   return {
     emptyState: '还没有分镜产物。',
-    noSelection: '选择一个分镜版本后，可以查看内容、来源关系和下载入口。',
+    noSelection: '选择一个分镜版本后，可以查看内容、镜头计划、提示词包、来源关系和下载入口。',
     preview: '分镜预览',
     download: '下载',
     sourceChain: '来源链路',
@@ -698,7 +825,60 @@ function getDefaultLabels(locale: SupportedLocale) {
     diagnosticsInvalidShots: '补位镜头',
     diagnosticsParseError: '解析信号',
     diagnosticsHealthy: '当前分镜直接来自结构化输出，没有触发兜底路径。',
+    linkedOutputs: '关联输出',
+    linkedOutputsHint: '同一次分镜任务产出的镜头计划和提示词包会直接显示在这里。',
+    linkedOutputsEmpty: '当前分镜版本还没有找到关联的镜头计划或提示词包。',
+    shotPlans: '镜头计划',
+    promptPacks: '提示词包',
+    promptPackEntries: '条目数',
+    promptPackTarget: '目标平台',
   };
+}
+
+function getLinkedOutputRank(kind: GenerationArtifact['kind']) {
+  if (kind === 'shot_plan') {
+    return 0;
+  }
+  if (kind === 'prompt_pack') {
+    return 1;
+  }
+
+  return 10;
+}
+
+function readShotPlanCount(artifact: GenerationArtifact) {
+  const parsedShots = parseStoryboardShotsFromContent(artifact.content);
+  if (parsedShots.length > 0) {
+    return parsedShots.length;
+  }
+
+  return readOptionalNumber(artifact.metadata?.shotCount) ?? 0;
+}
+
+function readPromptPackSummary(content?: string | null) {
+  if (!content) {
+    return { entryCount: 0, targetPlatform: null as string | null };
+  }
+
+  try {
+    const parsed = JSON.parse(content) as Array<{ targetPlatform?: string }> | unknown;
+    if (!Array.isArray(parsed)) {
+      return { entryCount: 0, targetPlatform: null as string | null };
+    }
+
+    const targetPlatform =
+      parsed.find(
+        (entry): entry is { targetPlatform?: string } =>
+          typeof entry === 'object' && entry !== null
+      )?.targetPlatform ?? null;
+
+    return {
+      entryCount: parsed.length,
+      targetPlatform,
+    };
+  } catch {
+    return { entryCount: 0, targetPlatform: null as string | null };
+  }
 }
 
 function groupRelationsByDownstream(relations: ArtifactRelation[]) {

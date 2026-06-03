@@ -26,11 +26,15 @@ export default async function ProjectDetailPage({
   }
 
   const sourceDocument = bundle.sourceDocuments[0];
+  const videoEnabled =
+    process.env.NOVELSCRIPT_ENABLE_VIDEO_GENERATION === 'true' &&
+    Boolean(process.env.GEMINI_API_KEY?.trim());
 
   return (
     <ProjectWorkspaceClient
       locale={locale === 'en-US' ? 'en-US' : 'zh-CN'}
       project={bundle.project}
+      videoEnabled={videoEnabled}
       initialSourceTitle={sourceDocument?.title ?? `${bundle.project.name} Source`}
       initialSourceText={sourceDocument?.textContent ?? ''}
       jobs={bundle.jobs}

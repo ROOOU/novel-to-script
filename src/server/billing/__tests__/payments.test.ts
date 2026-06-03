@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CreditPackKey, PlanKey } from '@/server/billing/catalog';
 
 const mocks = vi.hoisted(() => ({
   getPlatformRuntime: vi.fn(),
@@ -142,7 +143,7 @@ describe('billing/payments orchestration', () => {
       email: 'creator@example.com',
       locale: 'zh-CN',
       origin: 'https://app.test',
-      creditPackKey: 'credits-50' as any,
+      creditPackKey: 'credits-50' as CreditPackKey,
       requestedCurrency: 'USD',
     });
 
@@ -221,7 +222,7 @@ describe('billing/payments orchestration', () => {
         email: 'creator@example.com',
         locale: 'zh-CN',
         origin: 'https://app.test',
-        creditPackKey: 'credits-50' as any,
+        creditPackKey: 'credits-50' as CreditPackKey,
         requestedCurrency: 'USD',
       })
     ).rejects.toThrow('PAYPAL_ORDER_CREATE_FAILED');
@@ -283,7 +284,7 @@ describe('billing/payments orchestration', () => {
       email: 'creator@example.com',
       locale: 'zh-CN',
       origin: 'https://app.test',
-      planKey: 'pro' as any,
+      planKey: 'pro' as PlanKey,
       requestedCurrency: 'USD',
     });
 

@@ -159,6 +159,133 @@ describe('pipeline-state', () => {
       '分析失败：LLM 请求被上游拒绝（400）'
     );
   });
+
+  it('ignores asset uploads when resolving the latest pipeline root job', () => {
+    const jobs = [
+      createJob({
+        id: 'script_done',
+        kind: 'script-generation',
+        status: 'succeeded',
+        currentStep: 'done',
+        createdAt: '2026-03-24T09:00:00.000Z',
+        inputSnapshot: {
+          payload: {},
+          metadata: {
+            pipelineMode: 'novel-to-storyboard',
+          },
+        },
+      }),
+      createJob({
+        id: 'asset_upload',
+        kind: 'asset-upload',
+        status: 'succeeded',
+        currentStep: 'done',
+        createdAt: '2026-03-24T10:00:00.000Z',
+        inputSnapshot: {
+          payload: {},
+          metadata: {},
+        },
+      }),
+    ];
+
+    const artifacts = [
+      createArtifact({
+        id: 'analysis_done',
+        kind: 'analysis',
+        generationJobId: 'script_done',
+      }),
+      createArtifact({
+        id: 'outline_done',
+        kind: 'outline',
+        generationJobId: 'script_done',
+      }),
+      createArtifact({
+        id: 'script_done_artifact',
+        kind: 'script',
+        generationJobId: 'script_done',
+      }),
+    ];
+
+    const stages = deriveProjectPipelineStages('zh-CN', 'source text', artifacts, jobs);
+
+    expect(stages.find((stage) => stage.id === 'analysis')).toMatchObject({
+      status: 'succeeded',
+      jobId: 'script_done',
+    });
+    expect(stages.find((stage) => stage.id === 'outline')).toMatchObject({
+      status: 'succeeded',
+      jobId: 'script_done',
+    });
+    expect(stages.find((stage) => stage.id === 'script')).toMatchObject({
+      status: 'succeeded',
+      jobId: 'script_done',
+    });
+  });
+
+  it('keeps artifact-backed storyboard jobs attached to their script stage even without legacy upstream metadata', () => {
+    const jobs = [
+      createJob({
+        id: 'script_done',
+        kind: 'script-generation',
+        status: 'succeeded',
+        currentStep: 'done',
+        createdAt: '2026-03-24T09:00:00.000Z',
+        inputSnapshot: {
+          payload: {},
+          metadata: {
+            pipelineMode: 'novel-to-storyboard',
+          },
+        },
+      }),
+      createJob({
+        id: 'story_from_script',
+        kind: 'storyboard-generation',
+        status: 'succeeded',
+        currentStep: 'done',
+        createdAt: '2026-03-24T10:00:00.000Z',
+        inputSnapshot: {
+          payload: {
+            scriptArtifactIds: ['script_done_artifact'],
+          },
+          metadata: {},
+        },
+      }),
+    ];
+
+    const artifacts = [
+      createArtifact({
+        id: 'analysis_done',
+        kind: 'analysis',
+        generationJobId: 'script_done',
+      }),
+      createArtifact({
+        id: 'outline_done',
+        kind: 'outline',
+        generationJobId: 'script_done',
+      }),
+      createArtifact({
+        id: 'script_done_artifact',
+        kind: 'script',
+        generationJobId: 'script_done',
+      }),
+      createArtifact({
+        id: 'story_done_artifact',
+        kind: 'storyboard',
+        generationJobId: 'story_from_script',
+      }),
+    ];
+
+    const stages = deriveProjectPipelineStages('zh-CN', 'source text', artifacts, jobs);
+
+    expect(stages.find((stage) => stage.id === 'analysis')?.status).toBe('succeeded');
+    expect(stages.find((stage) => stage.id === 'outline')?.status).toBe('succeeded');
+    expect(stages.find((stage) => stage.id === 'script')?.status).toBe('succeeded');
+    expect(stages.find((stage) => stage.id === 'storyboard')).toMatchObject({
+      status: 'succeeded',
+      jobId: 'story_from_script',
+      artifactId: 'story_done_artifact',
+    });
+  });
 });
 
 function createJob(overrides: Partial<GenerationJob>): GenerationJob {

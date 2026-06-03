@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
         visualStyle: body.visualStyle ?? null,
         colorTone: body.colorTone ?? null,
         genreLabel: body.genreLabel ?? null,
+        targetPlatform: body.targetPlatform ?? 'generic-video',
       },
     });
     await runtime.generationJobs.markRunning(job.id, undefined, platformContext.userId);

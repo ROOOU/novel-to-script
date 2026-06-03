@@ -1,6 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import {
+  WorkspaceListRow,
+  WorkspaceListRowMeta,
+} from '@/components/WorkspaceUI';
 import type {
   ArtifactRelation,
   GenerationArtifact,
@@ -118,12 +122,27 @@ export function ProjectArtifactStudioPanel({
   onVersionSaved,
 }: ProjectArtifactStudioPanelProps) {
   const uiCopy = getStudioUiCopy(locale);
-  const [activeKind, setActiveKind] = useState<ArtifactKind>(initialKind ?? allowedKinds?.[0] ?? 'analysis');
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
-  const [draftTitle, setDraftTitle] = useState('');
-  const [draftContent, setDraftContent] = useState('');
+  const [kindState, setKindState] = useState(() => ({
+    initialKind,
+    value: initialKind ?? allowedKinds?.[0] ?? 'analysis',
+  }));
+  const [selectionState, setSelectionState] = useState(() => ({
+    controlledArtifactId: controlledSelectedArtifactId ?? null,
+    value: controlledSelectedArtifactId ?? null,
+  }));
+  const [draftState, setDraftState] = useState(() => ({
+    artifactId: null as string | null,
+    title: '',
+    content: '',
+  }));
+  const [messageState, setMessageState] = useState<{
+    artifactId: string | null;
+    value: string | null;
+  }>({
+    artifactId: null,
+    value: null,
+  });
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   const configuredKinds = useMemo(() => {
     if (!allowedKinds?.length) {
@@ -137,58 +156,38 @@ export function ProjectArtifactStudioPanel({
   const availableKinds = useMemo(() => {
     return configuredKinds.filter(({ kind }) => artifacts.some((artifact) => artifact.kind === kind));
   }, [artifacts, configuredKinds]);
-
-  useEffect(() => {
-    if (!initialKind) {
-      return;
-    }
-
-    setActiveKind(initialKind);
-  }, [initialKind]);
-
-  useEffect(() => {
-    if (availableKinds.length === 0) {
-      return;
-    }
-
-    if (!availableKinds.some(({ kind }) => kind === activeKind)) {
-      setActiveKind(availableKinds[0].kind);
-    }
-  }, [activeKind, availableKinds]);
+  const requestedActiveKind =
+    kindState.initialKind === initialKind ? kindState.value : (initialKind ?? kindState.value);
+  const activeKind =
+    availableKinds.find(({ kind }) => kind === requestedActiveKind)?.kind ??
+    availableKinds[0]?.kind ??
+    configuredKinds.find(({ kind }) => kind === requestedActiveKind)?.kind ??
+    configuredKinds[0]?.kind ??
+    requestedActiveKind;
 
   const kindArtifacts = useMemo(() => {
     return artifacts
       .filter((artifact) => artifact.kind === activeKind)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.version - left.version);
   }, [activeKind, artifacts]);
-
-  useEffect(() => {
-    if (selectedArtifactId && kindArtifacts.some((artifact) => artifact.id === selectedArtifactId)) {
-      return;
-    }
-
-    setSelectedArtifactId(kindArtifacts[0]?.id ?? null);
-  }, [kindArtifacts, selectedArtifactId]);
-
-  useEffect(() => {
-    if (!controlledSelectedArtifactId) {
-      return;
-    }
-
-    if (!kindArtifacts.some((artifact) => artifact.id === controlledSelectedArtifactId)) {
-      return;
-    }
-
-    setSelectedArtifactId(controlledSelectedArtifactId);
-  }, [controlledSelectedArtifactId, kindArtifacts]);
-
-  const selectedArtifact = kindArtifacts.find((artifact) => artifact.id === selectedArtifactId) ?? kindArtifacts[0] ?? null;
-
-  useEffect(() => {
-    setDraftTitle(selectedArtifact?.title ?? '');
-    setDraftContent(selectedArtifact?.content ?? '');
-    setMessage(null);
-  }, [selectedArtifact?.content, selectedArtifact?.id, selectedArtifact?.title]);
+  const requestedSelectedArtifactId =
+    selectionState.controlledArtifactId === (controlledSelectedArtifactId ?? null)
+      ? selectionState.value
+      : (controlledSelectedArtifactId ?? selectionState.value);
+  const selectedArtifact =
+    kindArtifacts.find((artifact) => artifact.id === requestedSelectedArtifactId) ??
+    kindArtifacts[0] ??
+    null;
+  const draftTitle =
+    draftState.artifactId === (selectedArtifact?.id ?? null)
+      ? draftState.title
+      : (selectedArtifact?.title ?? '');
+  const draftContent =
+    draftState.artifactId === (selectedArtifact?.id ?? null)
+      ? draftState.content
+      : (selectedArtifact?.content ?? '');
+  const message =
+    messageState.artifactId === (selectedArtifact?.id ?? null) ? messageState.value : null;
 
   const versionHistory = useMemo(() => {
     if (!selectedArtifact) {
@@ -251,6 +250,48 @@ export function ProjectArtifactStudioPanel({
 
   const outlineParseError = activeKind === 'outline' ? parseOutlineDraft(draftContent).error : null;
 
+  function updateDraftState(
+    updater: (current: { title: string; content: string }) => { title: string; content: string }
+  ) {
+    if (!selectedArtifact) {
+      return;
+    }
+
+    setDraftState((current) => {
+      const base =
+        current.artifactId === selectedArtifact.id
+          ? { title: current.title, content: current.content }
+          : {
+              title: selectedArtifact.title ?? '',
+              content: selectedArtifact.content ?? '',
+            };
+
+      return {
+        artifactId: selectedArtifact.id,
+        ...updater(base),
+      };
+    });
+    setMessageState((current) =>
+      current.artifactId === selectedArtifact.id
+        ? { artifactId: selectedArtifact.id, value: null }
+        : current
+    );
+  }
+
+  function updateDraftTitle(value: string) {
+    updateDraftState((current) => ({
+      ...current,
+      title: value,
+    }));
+  }
+
+  function updateDraftContent(value: string) {
+    updateDraftState((current) => ({
+      ...current,
+      content: value,
+    }));
+  }
+
   async function handleSaveVersion() {
     if (!selectedArtifact) {
       return;
@@ -270,41 +311,74 @@ export function ProjectArtifactStudioPanel({
     setSaving(false);
     const payload = await response.json();
     if (!payload.ok) {
-      setMessage(payload.error ?? labels.parseError);
+      setMessageState({
+        artifactId: selectedArtifact.id,
+        value: payload.error ?? labels.parseError,
+      });
       return;
     }
 
-    setMessage(labels.saveVersion);
+    setMessageState({
+      artifactId: selectedArtifact.id,
+      value: labels.saveVersion,
+    });
     if (payload.version?.id) {
-      setSelectedArtifactId(payload.version.id);
+      setSelectionState({
+        controlledArtifactId: controlledSelectedArtifactId ?? null,
+        value: payload.version.id,
+      });
     }
     await onVersionSaved?.();
   }
 
   function updateAnalysis(next: NovelAnalysis) {
-    setDraftContent(serializeAnalysisDraft(next));
+    updateDraftContent(serializeAnalysisDraft(next));
   }
 
   function updateOutline(next: OutlineEntry[]) {
-    setDraftContent(serializeOutlineDraft(next));
+    updateDraftContent(serializeOutlineDraft(next));
   }
 
   function resetDraft() {
-    setDraftTitle(selectedArtifact?.title ?? '');
-    setDraftContent(selectedArtifact?.content ?? '');
+    if (!selectedArtifact) {
+      return;
+    }
+
+    setDraftState({
+      artifactId: selectedArtifact.id,
+      title: selectedArtifact.title ?? '',
+      content: selectedArtifact.content ?? '',
+    });
+    setMessageState({
+      artifactId: selectedArtifact.id,
+      value: null,
+    });
   }
 
   async function handleCopyArtifactContent() {
+    if (!selectedArtifact) {
+      return;
+    }
+
     if (!selectedArtifactContent) {
-      setMessage(uiCopy.noContentToCopy);
+      setMessageState({
+        artifactId: selectedArtifact.id,
+        value: uiCopy.noContentToCopy,
+      });
       return;
     }
 
     try {
       await copyTextToClipboard(selectedArtifactContent);
-      setMessage(uiCopy.copySuccess);
+      setMessageState({
+        artifactId: selectedArtifact.id,
+        value: uiCopy.copySuccess,
+      });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : uiCopy.copyFailure);
+      setMessageState({
+        artifactId: selectedArtifact.id,
+        value: error instanceof Error ? error.message : uiCopy.copyFailure,
+      });
     }
   }
 
@@ -321,7 +395,12 @@ export function ProjectArtifactStudioPanel({
             key={kind}
             type="button"
             className={`segment ${activeKind === kind ? 'active' : ''}`}
-            onClick={() => setActiveKind(kind)}
+            onClick={() =>
+              setKindState({
+                initialKind,
+                value: kind,
+              })
+            }
           >
             {labels[labelKey]}
           </button>
@@ -330,10 +409,10 @@ export function ProjectArtifactStudioPanel({
 
       <div className="version-layout">
         <div className="version-list">
-          <div className="list-row">
+          <WorkspaceListRow>
             <strong>{labels.versionHistory}</strong>
             <span>{kindArtifacts.length}</span>
-          </div>
+          </WorkspaceListRow>
           <p className="helper-text">{labels.selectVersion}</p>
           {kindArtifacts.length === 0 ? (
             <p>{labels.noVersions}</p>
@@ -343,7 +422,12 @@ export function ProjectArtifactStudioPanel({
                 key={artifact.id}
                 type="button"
                 className={`version-item ${selectedArtifact?.id === artifact.id ? 'active' : ''}`}
-                onClick={() => setSelectedArtifactId(artifact.id)}
+                onClick={() =>
+                  setSelectionState({
+                    controlledArtifactId: controlledSelectedArtifactId ?? null,
+                    value: artifact.id,
+                  })
+                }
               >
                 <strong>{artifact.title}</strong>
                 <span>{artifact.kind}</span>
@@ -357,18 +441,18 @@ export function ProjectArtifactStudioPanel({
 
         {selectedArtifact ? (
           <div className="artifact-block stack-gap">
-            <div className="list-row">
+            <WorkspaceListRow>
               <div>
                 <strong>{selectedArtifact.title}</strong>
                 <p>
                   {labels.currentVersionLabel} v{selectedArtifact.version}
                 </p>
               </div>
-              <div className="list-row-meta">
+              <WorkspaceListRowMeta>
                 <span>{labels.latestVersionLabel}</span>
                 <span>{selectedArtifact.kind}</span>
-              </div>
-            </div>
+              </WorkspaceListRowMeta>
+            </WorkspaceListRow>
 
             <div className="artifact-meta-grid">
               <div className="artifact-meta-card">
@@ -436,18 +520,18 @@ export function ProjectArtifactStudioPanel({
               {sourceArtifactIds.length > 0 ? (
                 <div className="stack-gap-sm">
                   <strong>{uiCopy.sourceArtifactIds}</strong>
-                  <div className="list-row-meta" style={{ flexWrap: 'wrap' }}>
+                  <WorkspaceListRowMeta style={{ flexWrap: 'wrap' }}>
                     {sourceArtifactIds.map((artifactId) => {
                       const sourceArtifact = sourceArtifacts.find((entry) => entry.artifactId === artifactId);
                       return (
                         <span key={artifactId} className="chip">
                           {sourceArtifact?.artifact
-                            ? `${sourceArtifact.artifact.title} · v${sourceArtifact.artifact.version}`
-                            : shortenId(artifactId)}
+                          ? `${sourceArtifact.artifact.title} · v${sourceArtifact.artifact.version}`
+                          : shortenId(artifactId)}
                         </span>
                       );
                     })}
-                  </div>
+                  </WorkspaceListRowMeta>
                 </div>
               ) : (
                 <p className="helper-text">
@@ -496,7 +580,7 @@ export function ProjectArtifactStudioPanel({
               <span>{labels.artifactTitleField}</span>
               <input
                 value={draftTitle}
-                onChange={(event) => setDraftTitle(event.target.value)}
+                onChange={(event) => updateDraftTitle(event.target.value)}
                 placeholder={selectedArtifact.title}
               />
             </label>
@@ -509,7 +593,7 @@ export function ProjectArtifactStudioPanel({
                 parseError={analysisParseError}
                 draftContent={draftContent}
                 onChange={updateAnalysis}
-                onRawChange={setDraftContent}
+                onRawChange={updateDraftContent}
               />
             ) : null}
 
@@ -520,7 +604,7 @@ export function ProjectArtifactStudioPanel({
                 parseError={outlineParseError}
                 draftContent={draftContent}
                 onChange={updateOutline}
-                onRawChange={setDraftContent}
+                onRawChange={updateDraftContent}
               />
             ) : null}
 
@@ -528,7 +612,7 @@ export function ProjectArtifactStudioPanel({
               <ScriptEditor
                 labels={labels}
                 draftContent={draftContent}
-                onRawChange={setDraftContent}
+                onRawChange={updateDraftContent}
               />
             ) : null}
 
@@ -626,7 +710,7 @@ function AnalysisEditor({
       </div>
 
       <div className="stack-gap-sm">
-        <div className="list-row">
+        <WorkspaceListRow>
           <strong>{labels.charactersField}</strong>
           <button
             type="button"
@@ -649,7 +733,7 @@ function AnalysisEditor({
           >
             {labels.addCharacter}
           </button>
-        </div>
+        </WorkspaceListRow>
         <div className="stack-gap-sm">
           {draft.characters.map((character, index) => (
             <CharacterEditor
@@ -703,14 +787,14 @@ function CharacterEditor({
 }) {
   return (
     <div className="analysis-item stack-gap-sm">
-      <div className="list-row">
+      <WorkspaceListRow>
         <strong>
           {labels.characterName} {index + 1}
         </strong>
         <button type="button" className="secondary-button" onClick={onRemove}>
           {labels.removeCharacter}
         </button>
-      </div>
+      </WorkspaceListRow>
       <label className="field">
         <span>{labels.characterName}</span>
         <input value={character.name} onChange={(event) => onChange({ ...character, name: event.target.value })} />
@@ -764,16 +848,16 @@ function OutlineEditor({
         </div>
       ) : null}
       <div className="stack-gap-sm">
-        <div className="list-row">
+        <WorkspaceListRow>
           <strong>{labels.versionHistory}</strong>
           <button type="button" className="secondary-button" onClick={() => onChange([...draft, createEmptyOutlineEntry(draft.length + 1)])}>
             {labels.addEpisode}
           </button>
-        </div>
+        </WorkspaceListRow>
         <div className="stack-gap-sm">
           {draft.map((entry, index) => (
             <div key={`${entry.episodeNumber}-${index}`} className="analysis-item stack-gap-sm">
-              <div className="list-row">
+              <WorkspaceListRow>
                 <strong>
                   {labels.outlineEpisodeNumber} {entry.episodeNumber}
                 </strong>
@@ -784,7 +868,7 @@ function OutlineEditor({
                 >
                   {labels.removeEpisode}
                 </button>
-              </div>
+              </WorkspaceListRow>
               <div className="analysis-grid">
                 <label className="analysis-item field">
                   <span className="analysis-item-label">{labels.outlineEpisodeNumber}</span>

@@ -2,6 +2,15 @@
 
 import { startTransition, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import {
+  WorkspaceCapabilityCard,
+  WorkspaceFeedback,
+  WorkspaceFormActions,
+  WorkspaceFormCard,
+  WorkspaceFormHeader,
+  WorkspaceHero,
+  WorkspaceMetricCard,
+} from '@/components/WorkspaceUI';
 import { GENRE_LABELS, GENRE_LABELS_EN, GENRE_VALUES } from '@/lib/types';
 import type { Project } from '@/server/shared/platform/domain';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
@@ -63,6 +72,116 @@ export function ProjectListClient({ locale, projects: initialProjects, labels }:
     generateStoryboardTitle: labels.quickStartGenerateStoryboardTitle,
     generateStoryboardDescription: labels.quickStartGenerateStoryboardDescription,
   });
+  const latestProject =
+    [...projects].sort(
+      (left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime()
+    )[0] ?? null;
+  const activeProjectCount = projects.filter(
+    (project) => Date.now() - new Date(project.updatedAt).getTime() <= 1000 * 60 * 60 * 24 * 14
+  ).length;
+  const genreCount = new Set(
+    projects
+      .map((project) => project.genre)
+      .filter((value): value is (typeof GENRE_VALUES)[number] => Boolean(value))
+  ).size;
+  const overviewCards =
+    locale === 'en-US'
+      ? [
+          {
+            badge: '01',
+            eyebrow: 'Source',
+            title: 'Start every adaptation with one source thread',
+            description:
+              'A project keeps the original prose, positioning notes, and references together before script work begins.',
+            tone: 'source',
+            meta: [
+              { label: 'Workspaces', value: `${projects.length}` },
+              { label: 'Keeps', value: 'Source + references' },
+            ],
+          },
+          {
+            badge: '02',
+            eyebrow: 'Script',
+            title: 'Lock the dramatic rhythm before shots',
+            description:
+              'Script generation stays attached to the same project so pacing, character turns, and episode beats stay reviewable.',
+            tone: 'script',
+            meta: [
+              { label: 'Purpose', value: 'Episode structure' },
+              { label: 'Feeds', value: 'Storyboard and review' },
+            ],
+          },
+          {
+            badge: '03',
+            eyebrow: 'Storyboard',
+            title: 'Generate shots and prompt packs together',
+            description:
+              'Storyboard, shot plan, and Seedance prompt pack belong to one production moment, so this stage keeps them visible side by side.',
+            tone: 'storyboard',
+            meta: [
+              { label: 'Outputs', value: 'Storyboard + shot plan' },
+              { label: 'Prompting', value: 'Seedance ready' },
+            ],
+          },
+          {
+            badge: '04',
+            eyebrow: 'Delivery',
+            title: 'Carry the chain forward into exports',
+            description:
+              'The same workspace continues into video generation, artifact download, and delivery review instead of fragmenting across tools.',
+            tone: 'delivery',
+            meta: [
+              { label: 'Next', value: 'Video and export' },
+              { label: 'Archive', value: 'Artifacts stay linked' },
+            ],
+          },
+        ]
+      : [
+          {
+            badge: '01',
+            eyebrow: '原文',
+            title: '先把素材收进同一个项目',
+            description: '每个短剧项目先沉淀原文、定位说明和参考资料，再继续进入后面的剧本与分镜流程。',
+            tone: 'source',
+            meta: [
+              { label: '工作台', value: `${projects.length} 个项目` },
+              { label: '沉淀', value: '原文与参考' },
+            ],
+          },
+          {
+            badge: '02',
+            eyebrow: '剧本',
+            title: '先把改编节奏固定下来',
+            description: '剧本生成和编辑沿着同一条项目链路推进，人物走向、集数结构和转场节拍都更容易复核。',
+            tone: 'script',
+            meta: [
+              { label: '目标', value: '剧情结构清晰' },
+              { label: '衔接', value: '分镜前的底稿' },
+            ],
+          },
+          {
+            badge: '03',
+            eyebrow: '分镜',
+            title: '镜头计划和提示词包一起产出',
+            description: '分镜、shot plan 和 Seedance prompt pack 归在同一次生产动作里，避免输出被拆散。',
+            tone: 'storyboard',
+            meta: [
+              { label: '输出', value: '分镜 + shot plan' },
+              { label: '提示词', value: 'Seedance 可直接用' },
+            ],
+          },
+          {
+            badge: '04',
+            eyebrow: '交付',
+            title: '继续走到导出与复盘',
+            description: '同一个工作台还能接住视频生成、artifact 下载和交付复看，不用在多个页面之间来回切。',
+            tone: 'delivery',
+            meta: [
+              { label: '下一步', value: '视频与导出' },
+              { label: '保留', value: '产物持续关联' },
+            ],
+          },
+        ];
 
   useEffect(() => {
     for (const project of projects) {
@@ -141,35 +260,73 @@ export function ProjectListClient({ locale, projects: initialProjects, labels }:
 
   return (
     <div className="workspace-shell stack-gap-lg">
-      <section className="workspace-hero projects-hero">
-        <div className="projects-hero-copy">
-          <span className="eyebrow">{locale === 'en-US' ? 'Workspace' : '工作台'}</span>
-          <h1>{labels.title}</h1>
-          <p>{labels.subtitle}</p>
-        </div>
-        <div className="projects-hero-aside">
-          <div className="metric-card metric-card-matcha">
-            <span>{locale === 'en-US' ? 'Projects' : '项目数'}</span>
-            <strong>{projects.length}</strong>
-          </div>
-          <div className="metric-card metric-card-ube">
-            <span>{locale === 'en-US' ? 'Workflow' : '流程'}</span>
-            <strong>{locale === 'en-US' ? 'Source -> Script -> Storyboard' : '原文 -> 剧本 -> 分镜'}</strong>
-          </div>
-        </div>
+      <WorkspaceHero
+        eyebrow={locale === 'en-US' ? 'Workspace' : '工作台'}
+        title={labels.title}
+        description={labels.subtitle}
+        tags={[
+          <span key="count" className="chip chip-count">
+            {locale === 'en-US' ? `${projects.length} workspaces` : `${projects.length} 个项目工作台`}
+          </span>,
+          <span key="genres" className="chip chip-soft">
+            {locale === 'en-US' ? `${genreCount} genre tracks` : `${genreCount} 条题材线`}
+          </span>,
+          latestProject ? (
+            <span key="latest" className="chip">
+              {locale === 'en-US' ? `Latest: ${latestProject.name}` : `最近更新：${latestProject.name}`}
+            </span>
+          ) : null,
+        ].filter(Boolean)}
+        aside={
+          <>
+          <WorkspaceMetricCard
+            tone="matcha"
+            label={locale === 'en-US' ? 'Projects' : '项目数'}
+            value={projects.length}
+          />
+          <WorkspaceMetricCard
+            tone="ube"
+            label={locale === 'en-US' ? 'Active in 14 days' : '近 14 天活跃'}
+            value={activeProjectCount}
+          />
+          <WorkspaceMetricCard
+            tone="slushie"
+            label={locale === 'en-US' ? 'Genres in play' : '题材线'}
+            value={genreCount}
+          />
+          </>
+        }
+      />
+
+      <section className="workspace-capability-grid">
+        {overviewCards.map((card) => (
+          <WorkspaceCapabilityCard
+            key={`${card.badge}-${card.tone}`}
+            tone={card.tone}
+            eyebrow={card.eyebrow}
+            title={card.title}
+            badge={card.badge}
+            description={card.description}
+            meta={card.meta.map((item) => ({
+              key: `${card.badge}-${item.label}`,
+              label: item.label,
+              value: item.value,
+            }))}
+          />
+        ))}
       </section>
 
       <section className="workspace-grid">
-        <form className="card stack-gap project-create-card" onSubmit={handleCreate}>
-          <div className="stack-gap-sm">
-            <span className="eyebrow">{locale === 'en-US' ? 'New project' : '新建项目'}</span>
-            <h2>{labels.createLabel}</h2>
-            <p>
-              {locale === 'en-US'
+        <WorkspaceFormCard as="form" className="project-create-card" onSubmit={handleCreate}>
+          <WorkspaceFormHeader
+            eyebrow={locale === 'en-US' ? 'New project' : '新建项目'}
+            title={labels.createLabel}
+            description={
+              locale === 'en-US'
                 ? 'Open a fresh workspace for one adaptation thread, then keep every source, script, and storyboard in one clear chain.'
-                : '为一条改编线索开启新的工作空间，把原文、剧本和分镜都沉淀到同一条清晰链路里。'}
-            </p>
-          </div>
+                : '为一条改编线索开启新的工作空间，把原文、剧本和分镜都沉淀到同一条清晰链路里。'
+            }
+          />
           <label className="field">
             <span>{labels.name}</span>
             <input value={name} onChange={(event) => setName(event.target.value)} required />
@@ -188,11 +345,13 @@ export function ProjectListClient({ locale, projects: initialProjects, labels }:
               ))}
             </select>
           </label>
-          <button type="submit" className="primary-button" disabled={submitting}>
-            {labels.createLabel}
-          </button>
-          {errorMessage ? <p className="helper-text">{errorMessage}</p> : null}
-        </form>
+          <WorkspaceFormActions>
+            <button type="submit" className="primary-button" disabled={submitting}>
+              {labels.createLabel}
+            </button>
+          </WorkspaceFormActions>
+          {errorMessage ? <WorkspaceFeedback tone="danger">{errorMessage}</WorkspaceFeedback> : null}
+        </WorkspaceFormCard>
 
         <div className="stack-gap">
           {projects.length === 0 ? (

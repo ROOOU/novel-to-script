@@ -1,5 +1,7 @@
 import { Genre } from '@/lib/types';
 
+type StoryboardTargetPlatform = 'generic-video' | 'seedance';
+
 /**
  * 分镜提示词 Prompt 模板
  * 将剧本场景拆分为视频分镜，生成包含镜头、角色、台词、音色、运镜的完整提示词
@@ -60,6 +62,20 @@ JSON 规则：
 4. JSON 内容必须与上方文本分镜逐镜对应，不要新增文本中不存在的镜头
 5. \`[SHOTS_JSON]\` 区块必须是输出的最后一段，JSON 代码块后不要再追加说明、标题或致歉`;
 
+const SEEDANCE_STORYBOARD_GUIDANCE = `## Seedance 2.0 官方案例式分解要求
+目标是让每个 \`videoPrompt\` 都能直接作为 Seedance 文生视频提示词继续测试。请按官方案例的写法补足：
+1. 明确 T2V 语气：15s短剧分镜，可在单条提示词内描述连续动作和多镜头调度
+2. 从开场镜位开始写：先说明场景、景别、构图和运镜，例如低机位跟拍、缓慢推进、快速平移、环绕或焦点转移
+3. 动作要有连续性：写出角色先做什么、随后怎么变化、最后如何收束，避免只写静态画面
+4. 加入物理和材质细节：服装、道具、光影反射、空间层次、动作惯性、环境颗粒或天气影响
+5. 写清音频同步：对白、环境声、脚步声、音乐节拍、口型或音效要与动作对应
+6. 保持主体一致性：人物外貌、服装、道具和场景关系不得在镜头中漂移
+7. 如后续绑定参考图，可把人物/场景/道具改写为 @图片 N，但当前输出不要凭空生成不存在的参考图编号`;
+
+function getTargetPlatformGuidance(targetPlatform?: StoryboardTargetPlatform): string {
+  return targetPlatform === 'seedance' ? `\n${SEEDANCE_STORYBOARD_GUIDANCE}\n` : '';
+}
+
 /** 核心分镜生成 System Prompt */
 export function getStoryboardSystemPrompt(): string {
   return `你是一位专业的短剧视频分镜师，擅长将剧本文字转化为详细的视频制作分镜提示词。
@@ -116,7 +132,8 @@ export function getStoryboardUserPrompt(
   scriptText: string,
   visualStyle: string,
   colorTone: string,
-  genreLabel: string
+  genreLabel: string,
+  targetPlatform?: StoryboardTargetPlatform
 ): string {
   return `请将以下剧本片段转化为详细的视频分镜提示词。
 
@@ -124,6 +141,7 @@ export function getStoryboardUserPrompt(
 - 画面风格: ${visualStyle}
 - 色调: ${colorTone}
 - 类型: ${genreLabel}
+${getTargetPlatformGuidance(targetPlatform)}
 
 ## 剧本内容
 ${scriptText}
@@ -146,7 +164,8 @@ export function getStoryboardSafeUserPrompt(
   scriptText: string,
   visualStyle: string,
   colorTone: string,
-  genreLabel: string
+  genreLabel: string,
+  targetPlatform?: StoryboardTargetPlatform
 ): string {
   return `请将以下剧本片段转化为详细的视频分镜提示词，并使用平台安全、克制的影视化表达。
 
@@ -154,6 +173,7 @@ export function getStoryboardSafeUserPrompt(
 - 画面风格: ${visualStyle}
 - 色调: ${colorTone}
 - 类型: ${genreLabel}
+${getTargetPlatformGuidance(targetPlatform)}
 
 ## 安全输出要求
 1. 只保留剧情推进所需的信息，不复现露骨的性描写、血腥细节、自残细节或违法细节

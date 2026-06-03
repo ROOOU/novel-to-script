@@ -47,6 +47,8 @@ export function formatJobKind(
   kind: GenerationJob['kind']
 ): string {
   switch (kind) {
+    case 'asset-upload':
+      return locale === 'en-US' ? 'Asset Upload' : '素材上传';
     case 'analysis-generation':
       return locale === 'en-US' ? 'Analysis' : '分析';
     case 'export-generation':
@@ -55,6 +57,8 @@ export function formatJobKind(
       return locale === 'en-US' ? 'Script' : '剧本';
     case 'storyboard-generation':
       return locale === 'en-US' ? 'Storyboard' : '分镜';
+    case 'video-generation':
+      return locale === 'en-US' ? 'Video' : '视频';
     default:
       return kind;
   }
@@ -81,6 +85,10 @@ export function formatArtifactKind(
       return locale === 'en-US' ? 'Shot Plan' : '镜头计划';
     case 'prompt_pack':
       return locale === 'en-US' ? 'Prompt Pack' : '提示词包';
+    case 'reference_image':
+      return locale === 'en-US' ? 'Reference Image' : '参考图';
+    case 'video_clip':
+      return locale === 'en-US' ? 'Video Clip' : '视频片段';
     case 'export':
       return locale === 'en-US' ? 'Export' : '导出';
     case 'prompt':

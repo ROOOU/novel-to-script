@@ -1,5 +1,6 @@
 'use client';
 
+import { WorkspaceListRow } from '@/components/WorkspaceUI';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 import { formatLocaleDateTime } from '@/features/saas/project/presentation';
 import type {
@@ -81,12 +82,12 @@ export function StoryboardGenerationPanel({
       ) : (
         <>
           <section className="stack-gap-sm">
-            <div className="list-row">
+            <WorkspaceListRow>
               <strong>{labels.sourceVersions}</strong>
               <button type="button" className="ghost-button" onClick={onResetSources}>
                 {labels.useLatestVersions}
               </button>
-            </div>
+            </WorkspaceListRow>
             <div className="artifact-filter-bar">
               {sourceOptions.map((option) => {
                 const active = selectedArtifactIdSet.has(option.artifactId);

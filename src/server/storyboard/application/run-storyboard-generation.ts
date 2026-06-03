@@ -106,13 +106,15 @@ export async function runStoryboardGeneration(
         promptScriptText,
         resolvedVisualStyle,
         resolvedColorTone,
-        resolvedGenreLabel
+        resolvedGenreLabel,
+        body.targetPlatform
       )
     : getStoryboardUserPrompt(
         promptScriptText,
         resolvedVisualStyle,
         resolvedColorTone,
-        resolvedGenreLabel
+        resolvedGenreLabel,
+        body.targetPlatform
       );
 
   const generateStoryboardDraft = (draftPrompt: string) =>
@@ -166,7 +168,8 @@ export async function runStoryboardGeneration(
       retryScriptText,
       resolvedVisualStyle,
       resolvedColorTone,
-      resolvedGenreLabel
+      resolvedGenreLabel,
+      body.targetPlatform
     );
 
     try {

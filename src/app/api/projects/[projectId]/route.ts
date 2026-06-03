@@ -112,6 +112,14 @@ function findRecoverableStaleJob(
 }
 
 function isRecoverableEarlyStep(job: GenerationJob) {
+  if (job.kind === 'video-generation') {
+    return ['queued'].includes(job.currentStep ?? 'queued');
+  }
+
+  if (job.kind === 'asset-upload') {
+    return false;
+  }
+
   if (job.kind === 'storyboard-generation') {
     return ['queued', 'running'].includes(job.status);
   }

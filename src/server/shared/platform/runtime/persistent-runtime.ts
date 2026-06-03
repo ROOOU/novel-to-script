@@ -1,20 +1,6 @@
 import type {
   ArtifactRelation,
-  CreateCreditAccountInput,
-  CreateCreditLedgerEntryInput,
-  CreateGenerationArtifactInput,
-  CreateGenerationJobInput,
-  CreateOrganizationInput,
-  CreatePaymentOrderInput,
-  CreateProjectInput,
-  CreateRedeemCodeCampaignInput,
-  CreateRedeemCodeInput,
-  CreateRedeemCodeRedemptionInput,
-  CreateSourceDocumentInput,
   CreateSubscriptionInput,
-  CreateUsageEventInput,
-  CreateUserInput,
-  CreateWorkspaceInput,
   CreditAccount,
   CreditLedgerEntry,
   GenerationArtifact,
@@ -28,7 +14,6 @@ import type {
   SourceDocument,
   Subscription,
   UpdateCreditAccountInput,
-  UpdateGenerationArtifactInput,
   UpdateGenerationJobInput,
   UpdateOrganizationInput,
   UpdatePaymentOrderInput,
@@ -86,6 +71,12 @@ export interface PersistentPlatformRuntime {
   redeemCodeCampaigns: RedeemCodeCampaignRepository;
   redeemCodes: RedeemCodeRepository;
   redeemCodeRedemptions: RedeemCodeRedemptionRepository;
+}
+
+function toCreateSubscriptionInput(input: UpsertCurrentSubscriptionInput): CreateSubscriptionInput {
+  const { subscriptionId, ...createInput } = input;
+  void subscriptionId;
+  return createInput;
 }
 
 export function createPersistentPlatformRuntime(): PersistentPlatformRuntime {
@@ -736,7 +727,7 @@ function createSubscriptionRepository(): SubscriptionRepository {
           updatedByUserId: input.createdByUserId ?? null,
         });
       }
-      return this.create(input as CreateSubscriptionInput);
+      return this.create(toCreateSubscriptionInput(input));
     },
   };
 }

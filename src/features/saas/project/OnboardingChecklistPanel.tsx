@@ -1,5 +1,6 @@
 'use client';
 
+import { WorkspaceStatusPill } from '@/components/WorkspaceUI';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 import {
   getOnboardingStepIndicator,
@@ -41,9 +42,9 @@ export function OnboardingChecklistPanel({
                 <span className="onboarding-step-index">{index + 1}</span>
                 <strong>{step.title}</strong>
               </div>
-              <span className={`status-pill status-pill-${mapOnboardingTone(step.tone)}`}>
+              <WorkspaceStatusPill tone={mapOnboardingTone(step.tone)}>
                 {getOnboardingStepIndicator(locale, step.tone)}
-              </span>
+              </WorkspaceStatusPill>
             </div>
             <p>{step.description}</p>
           </div>

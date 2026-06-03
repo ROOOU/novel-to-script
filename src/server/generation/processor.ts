@@ -1,17 +1,30 @@
 import type { ScriptGenerationRequest } from '@/features/script-generation/contracts';
 import type { StoryboardGenerateRequestV2 } from '@/features/storyboard/contracts';
+import type { VideoGenerationRequest } from '@/features/video-generation/contracts';
+import { getServerLLMConfigError } from '@/lib/server-llm-config';
 import type { ComplexityInfo, GenerationMode, PipelineMode } from '@/lib/types';
 import { estimateJobCredits } from '@/server/billing/catalog';
 import { captureJobCredits, releaseJobCredits, reserveJobCredits } from '@/server/billing/service';
 import { runScriptGeneration } from '@/server/script-generation/application/run-script-generation';
 import { runStoryboardGeneration } from '@/server/storyboard/application/run-storyboard-generation';
 import { getPlatformRuntime, resolvePlatformLLMConfig, type GenerationArtifact } from '@/server/shared/platform';
+import { getVideoGenerationModel } from '@/server/video-generation/config';
+import { runVideoGeneration } from '@/server/video-generation/application/run-video-generation';
+import {
+  DEV_FALLBACK_MODEL_NAME,
+  runScriptGenerationDevFallback,
+  runStoryboardGenerationDevFallback,
+  shouldUseDevGenerationFallback,
+} from './dev-fallback';
 import { getProjectGenerationScheduler } from './queue';
 
-export type ProjectGenerationKind = 'script-generation' | 'storyboard-generation';
+export type ProjectGenerationKind =
+  | 'script-generation'
+  | 'storyboard-generation'
+  | 'video-generation';
 
 interface PersistedGenerationJobSnapshot {
-  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2;
+  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2 | VideoGenerationRequest;
   metadata?: Record<string, unknown>;
 }
 
@@ -30,16 +43,23 @@ export async function createPersistedGenerationJob(input: {
   projectId: string;
   userId: string;
   kind: ProjectGenerationKind;
-  body: ScriptGenerationRequest | StoryboardGenerateRequestV2;
+  body: ScriptGenerationRequest | StoryboardGenerateRequestV2 | VideoGenerationRequest;
   metadata?: Record<string, unknown>;
 }) {
   const runtime = getPlatformRuntime();
-  const estimatedCredits = estimateJobCredits(input.kind, {
-    episodeCount:
-      input.kind === 'script-generation'
-        ? (input.body as ScriptGenerationRequest).config.episodeCount
-        : 1,
-  });
+  const llmConfigError =
+    input.kind === 'video-generation' ? null : getServerLLMConfigError();
+  const estimatedCredits = shouldUseDevGenerationFallback({
+    kind: input.kind,
+    llmConfigError,
+  })
+    ? 0
+    : estimateJobCredits(input.kind, {
+        episodeCount:
+          input.kind === 'script-generation'
+            ? (input.body as ScriptGenerationRequest).config.episodeCount
+            : 1,
+      });
 
   const job = await runtime.generationJobs.create({
     organizationId: input.organizationId,
@@ -120,12 +140,6 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
     plan: mapPlanKeyToPlatformPlan(planKey),
     source: 'default' as const,
   };
-  const llmResolution = resolvePlatformLLMConfig(platformContext);
-  if (llmResolution.error || !llmResolution.config) {
-    await failAndRelease(jobId, llmResolution.error ?? 'LLM_CONFIG_MISSING');
-    return;
-  }
-
   const snapshot = parseJobSnapshot(job.inputSnapshot);
   const onProgress = async (progress: {
     progress: number;
@@ -148,25 +162,158 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
   const createdArtifacts: GenerationArtifact[] = [];
 
   try {
-    await runtime.generationJobs.update(job.id, {
-      modelName: llmResolution.config.modelName ?? null,
-      updatedByUserId: job.requestedByUserId,
-    });
-    await runtime.generationJobs.markRunning(job.id, undefined, job.requestedByUserId);
+    if (job.kind === 'video-generation') {
+      await runtime.generationJobs.update(job.id, {
+        modelName: getVideoGenerationModel(),
+        updatedByUserId: job.requestedByUserId,
+      });
+    } else {
+      const llmResolution = resolvePlatformLLMConfig(platformContext);
+      const useDevFallback = shouldUseDevGenerationFallback({
+        kind: job.kind,
+        llmConfigError: llmResolution.error ?? (llmResolution.config ? null : 'LLM_CONFIG_MISSING'),
+      });
 
-    if (job.kind === 'script-generation') {
-      const body = snapshot.payload as ScriptGenerationRequest | undefined;
-      if (!body) {
-        throw new Error('SCRIPT_JOB_PAYLOAD_MISSING');
+      if (!useDevFallback && (llmResolution.error || !llmResolution.config)) {
+        await failAndRelease(jobId, llmResolution.error ?? 'LLM_CONFIG_MISSING');
+        return;
       }
 
-      await runScriptGeneration({
+      await runtime.generationJobs.update(job.id, {
+        modelName: useDevFallback
+          ? DEV_FALLBACK_MODEL_NAME
+          : llmResolution.config?.modelName ?? null,
+        updatedByUserId: job.requestedByUserId,
+      });
+
+      if (job.kind === 'script-generation') {
+        const body = snapshot.payload as ScriptGenerationRequest | undefined;
+        if (!body) {
+          throw new Error('SCRIPT_JOB_PAYLOAD_MISSING');
+        }
+
+        await runtime.generationJobs.markRunning(job.id, undefined, job.requestedByUserId);
+        const onArtifact = async (artifact: {
+          kind: string;
+          format: string;
+          title: string;
+          content?: string | null;
+          metadata?: Record<string, unknown>;
+        }) => {
+          const created = await runtime.generationArtifacts.create({
+            organizationId: job.organizationId,
+            workspaceId: job.workspaceId,
+            projectId: job.projectId,
+            generationJobId: job.id,
+            kind: artifact.kind as GenerationArtifact['kind'],
+            format: artifact.format as GenerationArtifact['format'],
+            title: artifact.title,
+            content: artifact.content ?? null,
+            metadata: artifact.metadata,
+            createdByUserId: job.requestedByUserId,
+          });
+          createdArtifacts.push(created);
+        };
+
+        if (useDevFallback) {
+          await runScriptGenerationDevFallback({
+            body,
+            context: platformContext,
+            jobId: job.id,
+            send: () => undefined,
+            usageMeter: runtime.usageMeter,
+            onProgress,
+            onArtifact,
+          });
+        } else {
+          await runScriptGeneration({
+            body,
+            context: platformContext,
+            jobId: job.id,
+            send: () => undefined,
+            llmConfig: llmResolution.config!,
+            usageMeter: runtime.usageMeter,
+            onProgress,
+            onArtifact,
+          });
+        }
+      } else if (job.kind === 'storyboard-generation') {
+        const body = snapshot.payload as StoryboardGenerateRequestV2 | undefined;
+        if (!body) {
+          throw new Error('STORYBOARD_JOB_PAYLOAD_MISSING');
+        }
+
+        let blockedByPolicy = false;
+        let blockedMessage = 'Storyboard blocked by policy';
+
+        await runtime.generationJobs.markRunning(job.id, undefined, job.requestedByUserId);
+        const onArtifact = async (artifact: {
+          kind: string;
+          format: string;
+          title: string;
+          content?: string | null;
+          metadata?: Record<string, unknown>;
+        }) => {
+          const created = await runtime.generationArtifacts.create({
+            organizationId: job.organizationId,
+            workspaceId: job.workspaceId,
+            projectId: job.projectId,
+            generationJobId: job.id,
+            kind: artifact.kind as GenerationArtifact['kind'],
+            format: artifact.format as GenerationArtifact['format'],
+            title: artifact.title,
+            content: artifact.content ?? null,
+            metadata: artifact.metadata,
+            createdByUserId: job.requestedByUserId,
+          });
+          createdArtifacts.push(created);
+        };
+
+        if (useDevFallback) {
+          await runStoryboardGenerationDevFallback({
+            body,
+            context: platformContext,
+            jobId: job.id,
+            send: () => undefined,
+            usageMeter: runtime.usageMeter,
+            onProgress,
+            onArtifact,
+          });
+        } else {
+          await runStoryboardGeneration({
+            body,
+            context: platformContext,
+            jobId: job.id,
+            send: (event) => {
+              if (event.step === 'content_policy_blocked') {
+                blockedByPolicy = true;
+                blockedMessage = event.message ?? blockedMessage;
+              }
+            },
+            llmConfig: llmResolution.config!,
+            usageMeter: runtime.usageMeter,
+            onProgress,
+            onArtifact,
+          });
+        }
+
+        if (blockedByPolicy) {
+          throw new Error(blockedMessage);
+        }
+      }
+    }
+
+    if (job.kind === 'video-generation') {
+      await runtime.generationJobs.markRunning(job.id, undefined, job.requestedByUserId);
+      const body = snapshot.payload as VideoGenerationRequest | undefined;
+      if (!body) {
+        throw new Error('VIDEO_JOB_PAYLOAD_MISSING');
+      }
+
+      await runVideoGeneration({
         body,
         context: platformContext,
         jobId: job.id,
-        send: () => undefined,
-        llmConfig: llmResolution.config,
-        usageMeter: runtime.usageMeter,
         onProgress,
         onArtifact: async (artifact) => {
           const created = await runtime.generationArtifacts.create({
@@ -177,55 +324,15 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
             kind: artifact.kind,
             format: artifact.format,
             title: artifact.title,
-            content: artifact.content,
+            content: artifact.content ?? null,
+            storageKey: artifact.storageKey,
+            checksum: artifact.checksum,
             metadata: artifact.metadata,
             createdByUserId: job.requestedByUserId,
           });
           createdArtifacts.push(created);
         },
       });
-    } else if (job.kind === 'storyboard-generation') {
-      const body = snapshot.payload as StoryboardGenerateRequestV2 | undefined;
-      if (!body) {
-        throw new Error('STORYBOARD_JOB_PAYLOAD_MISSING');
-      }
-
-      let blockedByPolicy = false;
-      let blockedMessage = 'Storyboard blocked by policy';
-
-      await runStoryboardGeneration({
-        body,
-        context: platformContext,
-        jobId: job.id,
-        send: (event) => {
-          if (event.step === 'content_policy_blocked') {
-            blockedByPolicy = true;
-            blockedMessage = event.message ?? blockedMessage;
-          }
-        },
-        llmConfig: llmResolution.config,
-        usageMeter: runtime.usageMeter,
-        onProgress,
-        onArtifact: async (artifact) => {
-          const created = await runtime.generationArtifacts.create({
-            organizationId: job.organizationId,
-            workspaceId: job.workspaceId,
-            projectId: job.projectId,
-            generationJobId: job.id,
-            kind: artifact.kind,
-            format: artifact.format,
-            title: artifact.title,
-            content: artifact.content,
-            metadata: artifact.metadata,
-            createdByUserId: job.requestedByUserId,
-          });
-          createdArtifacts.push(created);
-        },
-      });
-
-      if (blockedByPolicy) {
-        throw new Error(blockedMessage);
-      }
     }
 
     const latestJob = await runtime.generationJobs.getById(job.id);
@@ -246,7 +353,12 @@ export async function processPersistedGenerationJob(jobId: string): Promise<void
     await runtime.generationJobs.markSucceeded(job.id, {
       progress: 100,
       currentStep: 'done',
-      outputSummary: job.kind === 'script-generation' ? 'Script generated' : 'Storyboard generated',
+      outputSummary:
+        job.kind === 'script-generation'
+          ? 'Script generated'
+          : job.kind === 'storyboard-generation'
+            ? 'Storyboard generated'
+            : 'Video generated',
       settledCredits: job.reservedCredits ?? 0,
       billingState: 'captured',
       updatedByUserId: job.requestedByUserId,
@@ -309,7 +421,7 @@ async function maybeRunNovelToStoryboardPipeline(
 async function writeDerivedArtifactRelations(
   job: Awaited<ReturnType<ReturnType<typeof getPlatformRuntime>['generationJobs']['getById']>>,
   createdArtifacts: GenerationArtifact[],
-  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2
+  payload?: ScriptGenerationRequest | StoryboardGenerateRequestV2 | VideoGenerationRequest
 ) {
   if (!job || createdArtifacts.length === 0) {
     return;
@@ -319,7 +431,9 @@ async function writeDerivedArtifactRelations(
   const relationInputs =
     job.kind === 'script-generation'
       ? buildScriptArtifactRelationInputs(job, createdArtifacts)
-      : buildStoryboardArtifactRelationInputs(job, createdArtifacts, payload as StoryboardGenerateRequestV2 | undefined);
+      : job.kind === 'storyboard-generation'
+        ? buildStoryboardArtifactRelationInputs(job, createdArtifacts, payload as StoryboardGenerateRequestV2 | undefined)
+        : buildVideoArtifactRelationInputs(job, createdArtifacts, payload as VideoGenerationRequest | undefined);
 
   if (relationInputs.length === 0) {
     return;
@@ -498,6 +612,40 @@ function buildStoryboardDerivedArtifactRelations(
   return relations;
 }
 
+function buildVideoArtifactRelationInputs(
+  job: NonNullable<Awaited<ReturnType<ReturnType<typeof getPlatformRuntime>['generationJobs']['getById']>>>,
+  createdArtifacts: GenerationArtifact[],
+  payload?: VideoGenerationRequest
+) {
+  const videoArtifacts = createdArtifacts.filter((artifact) => artifact.kind === 'video_clip');
+  if (videoArtifacts.length === 0 || !payload) {
+    return [];
+  }
+
+  const upstreamArtifactIds = Array.from(
+    new Set([
+      payload.shotPlanArtifactId,
+      ...(payload.referenceImageArtifactIds ?? []),
+      payload.firstFrameArtifactId,
+      payload.lastFrameArtifactId,
+    ].filter((artifactId): artifactId is string => typeof artifactId === 'string' && artifactId.trim().length > 0))
+  );
+
+  return videoArtifacts.flatMap((artifact) =>
+    upstreamArtifactIds.map((upstreamArtifactId) => ({
+      projectId: job.projectId,
+      upstreamArtifactId,
+      downstreamArtifactId: artifact.id,
+      relationType: 'derived_from' as const,
+      metadata: {
+        generationJobId: job.id,
+        sourceShotId: payload.shotId,
+      },
+      createdByUserId: job.requestedByUserId,
+    }))
+  );
+}
+
 async function failAndRelease(jobId: string, errorMessage: string) {
   const runtime = getPlatformRuntime();
   const job = await runtime.generationJobs.getById(jobId);
@@ -536,7 +684,7 @@ function mapPlanKeyToPlatformPlan(planKey: string): 'free' | 'creator' | 'pro' {
 
 function parseJobSnapshot(value: Record<string, unknown>): PersistedGenerationJobSnapshot {
   return {
-    payload: value.payload as ScriptGenerationRequest | StoryboardGenerateRequestV2 | undefined,
+    payload: value.payload as ScriptGenerationRequest | StoryboardGenerateRequestV2 | VideoGenerationRequest | undefined,
     metadata: isRecord(value.metadata) ? value.metadata : {},
   };
 }

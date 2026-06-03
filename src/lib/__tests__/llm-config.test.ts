@@ -60,7 +60,7 @@ describe('parseLLMFallbackConfigsFromEnv', () => {
           label: 'backup-a',
         },
       ]),
-    } as NodeJS.ProcessEnv);
+    } as unknown as NodeJS.ProcessEnv);
 
     expect(fallbacks).toEqual([
       {

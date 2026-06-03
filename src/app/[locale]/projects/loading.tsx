@@ -1,13 +1,14 @@
+import { WorkspaceHero } from '@/components/WorkspaceUI';
+
 export default function ProjectsLoading() {
   return (
     <div className="workspace-shell stack-gap-lg">
-      <section className="workspace-hero projects-hero">
-        <div className="skeleton-panel">
-          <div className="skeleton-line" style={{ width: '120px' }} />
-          <div className="skeleton-line" style={{ width: '280px', height: '28px' }} />
-          <div className="skeleton-line" style={{ width: '420px' }} />
-        </div>
-      </section>
+      <WorkspaceHero
+        eyebrow={<div className="skeleton-line" style={{ width: '120px' }} />}
+        title={<div className="skeleton-line" style={{ width: '280px', height: '28px' }} />}
+        description={<div className="skeleton-line" style={{ width: '420px' }} />}
+        className="loading-hero"
+      />
 
       <section className="workspace-grid">
         <article className="card skeleton-panel">

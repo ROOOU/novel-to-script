@@ -172,6 +172,73 @@ describe('storyboard generation request handling', () => {
     );
   });
 
+  it('adds Seedance guidance and emits Seedance prompt packs when requested', async () => {
+    let capturedUserPrompt = '';
+    streamLLM.mockImplementation(async function* (_systemPrompt: string, userPrompt: string) {
+      capturedUserPrompt = userPrompt;
+      yield `分镜① 6s：时间：夜，场景图片：🖼️便利店_0，镜头：中景，低机位跟拍后缓慢推进，🧑 林晚-基础形象-基础形象 推开玻璃门并停顿。
+
+[SHOTS_JSON]
+\`\`\`json
+[
+  {
+    "sceneId": "S01",
+    "shotId": "S01-SH01",
+    "shotType": "中景",
+    "camera": "低机位跟拍后缓慢推进",
+    "composition": "人物居中，前景玻璃反射",
+    "motion": "林晚推开玻璃门并停顿一秒",
+    "subject": "林晚",
+    "environment": "雨夜便利店",
+    "lighting": "霓虹灯与室内暖光交错",
+    "audioHint": "雨声、门铃声和呼吸声同步",
+    "videoPrompt": "雨夜便利店，中景，低机位跟拍后缓慢推进，林晚推开玻璃门并停顿一秒，霓虹灯反射，雨声、门铃声和呼吸声同步"
+  }
+]
+\`\`\``;
+    });
+
+    const onArtifact = vi.fn();
+
+    await runStoryboardGeneration({
+      body: {
+        scriptText: '1-1 夜 内 便利店\n林晚推开便利店玻璃门，听见门铃响起。',
+        visualStyle: '真人写实',
+        colorTone: '暖色调',
+        genreLabel: '都市女频',
+        targetPlatform: 'seedance',
+      },
+      context: {
+        requestId: 'req_seedance',
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        userId: 'user_1',
+        plan: 'free',
+      } as never,
+      jobId: 'job_seedance',
+      send: vi.fn(),
+      llmConfig: {} as never,
+      onArtifact,
+    });
+
+    expect(capturedUserPrompt).toContain('Seedance 2.0 官方案例式分解要求');
+    expect(capturedUserPrompt).toContain('15s短剧分镜');
+
+    const promptPackArtifact = onArtifact.mock.calls[2]?.[0];
+    expect(promptPackArtifact).toMatchObject({
+      kind: 'prompt_pack',
+      metadata: expect.objectContaining({
+        targetPlatform: 'seedance',
+      }),
+    });
+    const promptPack = JSON.parse(promptPackArtifact.content);
+    expect(promptPack[0]).toMatchObject({
+      targetPlatform: 'seedance',
+    });
+    expect(promptPack[0].copyReadyText).toContain('Seedance 2.0 官方案例式分解');
+    expect(promptPack[0].copyReadyText).toContain('音频/对白');
+  });
+
   it('resolves storyboard script text from a script artifact list helper', async () => {
     getPlatformRuntime.mockReturnValue({
       generationArtifacts: {

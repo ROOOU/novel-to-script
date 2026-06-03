@@ -1,5 +1,6 @@
 'use client';
 
+import { WorkspaceListRow, WorkspaceStatusPill } from '@/components/WorkspaceUI';
 import type { GenerationJob } from '@/server/shared/platform/domain';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 import {
@@ -51,7 +52,7 @@ export function PipelineProgressBar({
 
   return (
     <section className="pipeline-progress-panel stack-gap">
-      <div className="list-row">
+      <WorkspaceListRow>
         <div>
           <h3>{title}</h3>
           {subtitle ? <p>{subtitle}</p> : null}
@@ -59,14 +60,14 @@ export function PipelineProgressBar({
         <div className="pipeline-progress-stats">
           <span className="chip">{`${completedCount}/${stages.length}`}</span>
           {runningCount > 0 ? (
-            <span className="status-pill status-pill-running">
+            <WorkspaceStatusPill tone="running">
               {formatCounterLabel(locale, runningCount, 'running stage', 'running stages', '进行中阶段')}
-            </span>
+            </WorkspaceStatusPill>
           ) : null}
           {failedCount > 0 ? (
-            <span className="status-pill status-pill-danger">
+            <WorkspaceStatusPill tone="danger">
               {formatCounterLabel(locale, failedCount, 'failed stage', 'failed stages', '失败阶段')}
-            </span>
+            </WorkspaceStatusPill>
           ) : null}
           {totalJobs > 0 ? (
             <span className="chip">
@@ -74,7 +75,7 @@ export function PipelineProgressBar({
             </span>
           ) : null}
         </div>
-      </div>
+      </WorkspaceListRow>
 
       {stages.length === 0 ? (
         <p className="helper-text">{emptyLabel ?? DEFAULT_EMPTY_LABEL}</p>
@@ -93,9 +94,9 @@ export function PipelineProgressBar({
                 <div className="stack-gap-sm">
                   <div className="pipeline-stage-headline">
                     <strong>{stage.title}</strong>
-                    <span className={`status-pill status-pill-${tone}`}>
+                    <WorkspaceStatusPill tone={tone}>
                       {formatJobStatus(locale, stage.status)}
-                    </span>
+                    </WorkspaceStatusPill>
                   </div>
                   <p className="pipeline-stage-summary">
                     {stage.summary?.trim() || emptyLabel || DEFAULT_EMPTY_LABEL}

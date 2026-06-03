@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { GENRE_VALUES, SCRIPT_STYLE_VALUES } from '@/lib/types';
+import { getServerLLMConfigError } from '@/lib/server-llm-config';
 import { requireViewerResponse } from '@/server/auth/http';
 import { viewerOwnsProject } from '@/server/auth/viewer-access';
+import { shouldUseDevGenerationFallback } from '@/server/generation/dev-fallback';
 import { createNovelToStoryboardPipeline } from '@/server/generation/pipeline-service';
 import { evaluateStoryComplexity } from '@/server/story-engine/complexity';
 import { getPlatformRuntime } from '@/server/shared/platform';
@@ -79,6 +81,16 @@ export async function POST(
 
   try {
     const body = pipelineSchema.parse(await request.json());
+    const llmConfigError = getServerLLMConfigError();
+    if (
+      llmConfigError &&
+      !shouldUseDevGenerationFallback({
+        kind: 'script-generation',
+        llmConfigError,
+      })
+    ) {
+      throw new Error(llmConfigError);
+    }
     const complexityInfo = evaluateStoryComplexity(body.payload.text);
     const executionMode = body.payload.executionMode ?? complexityInfo.recommendedExecutionMode;
     const pipeline = await createNovelToStoryboardPipeline({

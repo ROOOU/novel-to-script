@@ -1,6 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import {
+  WorkspaceCapabilityCard,
+  WorkspaceFeedback,
+  WorkspaceFormActions,
+  WorkspaceFormCard,
+  WorkspaceFormHeader,
+  WorkspaceHero,
+  WorkspaceMetricCard,
+  WorkspaceMiniList,
+  WorkspaceNoteCard,
+} from '@/components/WorkspaceUI';
 import type { SupportedLocale } from '@/server/shared/platform/domain';
 
 type ScenarioKey = 'credits' | 'payment' | 'project' | 'redeem';
@@ -68,7 +79,7 @@ export function DevTestingClient({
 }: DevTestingClientProps) {
   const [pending, setPending] = useState<ScenarioKey | null>(null);
   const [summary, setSummary] = useState<Record<string, unknown> | null>(null);
-  const [results, setResults] = useState<Record<ScenarioKey, string | null>>({
+  const [results, setResults] = useState<Record<ScenarioKey, { tone: 'success' | 'danger'; message: string } | null>>({
     credits: null,
     payment: null,
     project: null,
@@ -93,6 +104,101 @@ export function DevTestingClient({
   const [codeCount, setCodeCount] = useState(10);
   const [creditsGranted, setCreditsGranted] = useState(60);
   const [expiresAt, setExpiresAt] = useState('');
+  const summaryEntries = summary ? Object.entries(summary) : [];
+  const overviewCards =
+    locale === 'en-US'
+      ? [
+          {
+            badge: 'Credits',
+            eyebrow: 'Balance',
+            title: 'Seed credits directly into the active org',
+            description: 'This scenario is for QA cases that need immediate balance changes without running a full checkout flow.',
+            tone: 'source',
+            meta: [
+              { label: 'Default', value: `${creditsDelta}` },
+              { label: 'Scope', value: 'Organization ledger' },
+            ],
+          },
+          {
+            badge: 'Orders',
+            eyebrow: 'Payment',
+            title: 'Create internal orders for billing drills',
+            description: 'Payment scenarios let the team simulate order states and billing reconciliation without touching live checkout.',
+            tone: 'script',
+            meta: [
+              { label: 'Kind', value: purchaseKind },
+              { label: 'Amount', value: `${amountCents}` },
+            ],
+          },
+          {
+            badge: 'Projects',
+            eyebrow: 'Demo',
+            title: 'Seed a complete project for workspace walkthroughs',
+            description: 'Demo projects help verify source, script, storyboard, and export flows in one pass.',
+            tone: 'storyboard',
+            meta: [
+              { label: 'Genre', value: projectGenre },
+              { label: 'Workspace', value: workspaceId },
+            ],
+          },
+          {
+            badge: 'Codes',
+            eyebrow: 'Redeem',
+            title: 'Generate redeem campaigns for end-to-end claims',
+            description: 'Campaign and code generation is part of the same QA lane, so ops can test credits and claims together.',
+            tone: 'delivery',
+            meta: [
+              { label: 'Prefix', value: codePrefix },
+              { label: 'Count', value: `${codeCount}` },
+            ],
+          },
+        ]
+      : [
+          {
+            badge: '积分',
+            eyebrow: '余额',
+            title: '直接给当前组织注入测试积分',
+            description: '适合需要马上变更余额的 QA 场景，不用完整走一遍真实支付流程。',
+            tone: 'source',
+            meta: [
+              { label: '默认值', value: `${creditsDelta}` },
+              { label: '作用域', value: '组织积分流水' },
+            ],
+          },
+          {
+            badge: '订单',
+            eyebrow: '支付',
+            title: '为账单演练生成内部订单',
+            description: '支付场景可以模拟订单状态和账单对账，而不必触发真实在线结账。',
+            tone: 'script',
+            meta: [
+              { label: '类型', value: purchaseKind },
+              { label: '金额', value: `${amountCents}` },
+            ],
+          },
+          {
+            badge: '项目',
+            eyebrow: '演示',
+            title: '一键注入完整项目用于工作台走查',
+            description: '演示项目能把原文、剧本、分镜和导出流程一次性串起来做验证。',
+            tone: 'storyboard',
+            meta: [
+              { label: '题材', value: projectGenre },
+              { label: '空间', value: workspaceId },
+            ],
+          },
+          {
+            badge: '兑换码',
+            eyebrow: '活动',
+            title: '把活动和领取场景收在同一条 QA 通道里',
+            description: '活动创建和兑换码测试属于同一批验证动作，运营与 QA 可以连着跑完。',
+            tone: 'delivery',
+            meta: [
+              { label: '前缀', value: codePrefix },
+              { label: '数量', value: `${codeCount}` },
+            ],
+          },
+        ];
 
   useEffect(() => {
     void fetch(DEV_SCENARIO_ENDPOINT)
@@ -145,12 +251,18 @@ export function DevTestingClient({
 
       setResults((current) => ({
         ...current,
-        [scenario]: message,
+        [scenario]: {
+          tone: response.ok ? 'success' : 'danger',
+          message,
+        },
       }));
     } catch (error) {
       setResults((current) => ({
         ...current,
-        [scenario]: `${labels.failure}: ${error instanceof Error ? error.message : 'NETWORK_ERROR'}`,
+        [scenario]: {
+          tone: 'danger',
+          message: `${labels.failure}: ${error instanceof Error ? error.message : 'NETWORK_ERROR'}`,
+        },
       }));
     } finally {
       setPending(null);
@@ -159,46 +271,109 @@ export function DevTestingClient({
 
   return (
     <div className="workspace-shell stack-gap-lg">
-      <section className="workspace-hero">
-        <div>
-          <p className="helper-text">{labels.gateNotice}</p>
-          <h1>{labels.title}</h1>
-          <p>{labels.subtitle}</p>
-        </div>
-        <a href={`/${locale}/admin`} className="secondary-button ghost-button">
-          {labels.backToAdmin}
-        </a>
+      <WorkspaceHero
+        eyebrow={locale === 'en-US' ? 'Developer' : '开发'}
+        title={labels.title}
+        description={labels.subtitle}
+        afterDescription={<p className="helper-text">{labels.gateNotice}</p>}
+        tags={[
+          <span key="scenarios" className="chip chip-count">
+            {locale === 'en-US' ? '4 QA scenarios' : '4 个 QA 场景'}
+          </span>,
+          <span key="org" className="chip chip-soft">
+            {locale === 'en-US' ? `Org ${organizationId.slice(0, 8)}` : `组织 ${organizationId.slice(0, 8)}`}
+          </span>,
+          <span key="workspace" className="chip">
+            {locale === 'en-US' ? `Workspace ${workspaceId.slice(0, 8)}` : `空间 ${workspaceId.slice(0, 8)}`}
+          </span>,
+        ]}
+        aside={
+          <>
+            <WorkspaceMetricCard
+              tone="matcha"
+              label={locale === 'en-US' ? 'Scenarios' : '场景数'}
+              value="4"
+            />
+            <WorkspaceMetricCard
+              tone="slushie"
+              label={locale === 'en-US' ? 'Endpoint' : '接口'}
+              value={DEV_SCENARIO_ENDPOINT}
+            />
+            <WorkspaceMetricCard
+              tone="lemon"
+              label={locale === 'en-US' ? 'Summary keys' : '摘要字段'}
+              value={summaryEntries.length}
+            />
+            <a href={`/${locale}/admin`} className="secondary-button ghost-button">
+              {labels.backToAdmin}
+            </a>
+          </>
+        }
+      />
+
+      <section className="workspace-capability-grid">
+        {overviewCards.map((card) => (
+          <WorkspaceCapabilityCard
+            key={`${card.badge}-${card.tone}`}
+            tone={card.tone}
+            eyebrow={card.eyebrow}
+            title={card.title}
+            badge={card.badge}
+            description={card.description}
+            meta={card.meta.map((item) => ({
+              key: `${card.badge}-${item.label}`,
+              label: item.label,
+              value: item.value,
+            }))}
+          />
+        ))}
       </section>
 
       <section className="workspace-grid">
-        <article className="card stack-gap">
-          <div className="stack-gap-sm">
-            <h2>{labels.quickGuideTitle}</h2>
-            <p>{labels.endpointLabel}: {DEV_SCENARIO_ENDPOINT}</p>
-          </div>
-          <div className="stack-gap-sm">
-            {labels.quickGuideItems.map((item) => (
-              <p key={item} className="helper-text">{item}</p>
-            ))}
-          </div>
-          <div className="list-row">
-            <span className="helper-text">{labels.organizationId}: {organizationId}</span>
-            <span className="helper-text">{locale === 'en-US' ? 'Execution scope' : '执行范围'}: {workspaceId}</span>
-          </div>
+        <WorkspaceNoteCard
+          tone="blueberry"
+          eyebrow={locale === 'en-US' ? 'Control panel' : '控制面板'}
+          title={labels.quickGuideTitle}
+          description={`${labels.endpointLabel}: ${DEV_SCENARIO_ENDPOINT}`}
+          className="stack-gap"
+        >
+          <WorkspaceMiniList
+            items={[
+              {
+                key: 'organization',
+                label: labels.organizationId,
+                value: organizationId,
+              },
+              {
+                key: 'scope',
+                label: locale === 'en-US' ? 'Execution scope' : '执行范围',
+                value: workspaceId,
+              },
+              {
+                key: 'summary',
+                label: locale === 'en-US' ? 'Summary items' : '摘要项',
+                value: summaryEntries.length,
+              },
+            ]}
+          />
           {summary ? (
             <div className="stack-gap-sm">
-              {Object.entries(summary).map(([key, value]) => (
+              {summaryEntries.map(([key, value]) => (
                 <p key={key} className="helper-text">
                   {key}: {String(value)}
                 </p>
               ))}
             </div>
           ) : null}
-        </article>
+          <div className="stack-gap-sm">
+            {labels.quickGuideItems.map((item) => (
+              <p key={item} className="helper-text">{item}</p>
+            ))}
+          </div>
+        </WorkspaceNoteCard>
 
-        <article className="card stack-gap">
-          <h2>{labels.seedCreditsTitle}</h2>
-          <p>{labels.seedCreditsSubtitle}</p>
+        <WorkspaceFormCard>
+          <WorkspaceFormHeader title={labels.seedCreditsTitle} description={labels.seedCreditsSubtitle} />
           <label className="field">
             <span>{labels.creditsDelta}</span>
             <input
@@ -212,28 +387,29 @@ export function DevTestingClient({
             <span>{labels.reason}</span>
             <input value={creditReason} onChange={(event) => setCreditReason(event.target.value)} />
           </label>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() =>
-              void submitScenario('credits', {
-                organizationId,
-                deltaCredits: creditsDelta,
-                reason: creditReason,
-              })
-            }
-            disabled={pending !== null}
-          >
-            {pending === 'credits' ? `${labels.seedCreditsAction}...` : labels.seedCreditsAction}
-          </button>
+          <WorkspaceFormActions>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() =>
+                void submitScenario('credits', {
+                  organizationId,
+                  deltaCredits: creditsDelta,
+                  reason: creditReason,
+                })
+              }
+              disabled={pending !== null}
+            >
+              {pending === 'credits' ? `${labels.seedCreditsAction}...` : labels.seedCreditsAction}
+            </button>
+          </WorkspaceFormActions>
           <ResultLine value={results.credits} />
-        </article>
+        </WorkspaceFormCard>
       </section>
 
       <section className="workspace-grid">
-        <article className="card stack-gap">
-          <h2>{labels.paymentOrderTitle}</h2>
-          <p>{labels.paymentOrderSubtitle}</p>
+        <WorkspaceFormCard>
+          <WorkspaceFormHeader title={labels.paymentOrderTitle} description={labels.paymentOrderSubtitle} />
           <div className="form-grid">
             <label className="field">
               <span>{labels.purchaseKind}</span>
@@ -259,30 +435,31 @@ export function DevTestingClient({
             <span>{labels.reference}</span>
             <input value={reference} onChange={(event) => setReference(event.target.value)} />
           </label>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() =>
-              void submitScenario('payment', {
-                organizationId,
-                workspaceId,
-                purchaseKind,
-                amountCents,
-                currency: 'USD',
-                provider: 'internal',
-                reference,
-              })
-            }
-            disabled={pending !== null}
-          >
-            {pending === 'payment' ? `${labels.createPaymentOrderAction}...` : labels.createPaymentOrderAction}
-          </button>
+          <WorkspaceFormActions>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() =>
+                void submitScenario('payment', {
+                  organizationId,
+                  workspaceId,
+                  purchaseKind,
+                  amountCents,
+                  currency: 'USD',
+                  provider: 'internal',
+                  reference,
+                })
+              }
+              disabled={pending !== null}
+            >
+              {pending === 'payment' ? `${labels.createPaymentOrderAction}...` : labels.createPaymentOrderAction}
+            </button>
+          </WorkspaceFormActions>
           <ResultLine value={results.payment} />
-        </article>
+        </WorkspaceFormCard>
 
-        <article className="card stack-gap">
-          <h2>{labels.demoProjectTitle}</h2>
-          <p>{labels.demoProjectSubtitle}</p>
+        <WorkspaceFormCard>
+          <WorkspaceFormHeader title={labels.demoProjectTitle} description={labels.demoProjectSubtitle} />
           <label className="field">
             <span>{labels.projectName}</span>
             <input value={projectName} onChange={(event) => setProjectName(event.target.value)} />
@@ -305,32 +482,33 @@ export function DevTestingClient({
             <span>{labels.sourceText}</span>
             <textarea value={sourceText} onChange={(event) => setSourceText(event.target.value)} rows={5} />
           </label>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() =>
-              void submitScenario('project', {
-                organizationId,
-                workspaceId,
-                name: projectName,
-                genre: projectGenre,
-                description: projectDescription,
-                sourceTitle,
-                sourceText,
-              })
-            }
-            disabled={pending !== null}
-          >
-            {pending === 'project' ? `${labels.createProjectAction}...` : labels.createProjectAction}
-          </button>
+          <WorkspaceFormActions>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() =>
+                void submitScenario('project', {
+                  organizationId,
+                  workspaceId,
+                  name: projectName,
+                  genre: projectGenre,
+                  description: projectDescription,
+                  sourceTitle,
+                  sourceText,
+                })
+              }
+              disabled={pending !== null}
+            >
+              {pending === 'project' ? `${labels.createProjectAction}...` : labels.createProjectAction}
+            </button>
+          </WorkspaceFormActions>
           <ResultLine value={results.project} />
-        </article>
+        </WorkspaceFormCard>
       </section>
 
       <section className="workspace-grid">
-        <article className="card stack-gap">
-          <h2>{labels.redeemBatchTitle}</h2>
-          <p>{labels.redeemBatchSubtitle}</p>
+        <WorkspaceFormCard>
+          <WorkspaceFormHeader title={labels.redeemBatchTitle} description={labels.redeemBatchSubtitle} />
           <label className="field">
             <span>{labels.campaignName}</span>
             <input value={campaignName} onChange={(event) => setCampaignName(event.target.value)} />
@@ -353,36 +531,38 @@ export function DevTestingClient({
               <input value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} placeholder="2026-04-01T00:00:00Z" />
             </label>
           </div>
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() =>
-              void submitScenario('redeem', {
-                organizationId,
-                campaignName,
-                codePrefix,
-                codeCount,
-                creditsGranted,
-                expiresAt: expiresAt || null,
-              })
-            }
-            disabled={pending !== null}
-          >
-            {pending === 'redeem' ? `${labels.generateCodesAction}...` : labels.generateCodesAction}
-          </button>
+          <WorkspaceFormActions>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() =>
+                void submitScenario('redeem', {
+                  organizationId,
+                  campaignName,
+                  codePrefix,
+                  codeCount,
+                  creditsGranted,
+                  expiresAt: expiresAt || null,
+                })
+              }
+              disabled={pending !== null}
+            >
+              {pending === 'redeem' ? `${labels.generateCodesAction}...` : labels.generateCodesAction}
+            </button>
+          </WorkspaceFormActions>
           <ResultLine value={results.redeem} />
-        </article>
+        </WorkspaceFormCard>
       </section>
     </div>
   );
 }
 
-function ResultLine({ value }: { value: string | null }) {
+function ResultLine({ value }: { value: { tone: 'success' | 'danger'; message: string } | null }) {
   if (!value) {
     return null;
   }
 
-  return <p className="helper-text">{value}</p>;
+  return <WorkspaceFeedback tone={value.tone} className="tool-result-line">{value.message}</WorkspaceFeedback>;
 }
 
 function formatPayloadSummary(payload: unknown): string {
